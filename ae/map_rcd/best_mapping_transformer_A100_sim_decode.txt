@@ -1,0 +1,30 @@
+Source: best_mapping_transformer_A100_sim_decode.jsonl
+Format: human-readable mapping summary
+
+1) layer_name: Q_proj
+   shape: M=8, N=3072, K=12288
+   latency_ms: 11.8579
+   L2 tiling: M=64, N=32, K=8192, double_buffering=true, loop_order=knm
+   L1 tiling: M=32, N=32, K=512, loop_order=knm
+   L0 tiling factors: M=1, N=2, K=2
+
+2) layer_name: H_matmul0
+   shape: M=8, N=12288, K=3072
+   latency_ms: 11.8983
+   L2 tiling: M=64, N=32, K=2048, double_buffering=true, loop_order=knm
+   L1 tiling: M=32, N=32, K=512, loop_order=knm
+   L0 tiling factors: M=1, N=2, K=2
+
+3) layer_name: H_matmul1
+   shape: M=8, N=12288, K=12288
+   latency_ms: 47.3165
+   L2 tiling: M=64, N=32, K=8192, double_buffering=true, loop_order=knm
+   L1 tiling: M=32, N=32, K=512, loop_order=knm
+   L0 tiling factors: M=1, N=2, K=2
+
+4) layer_name: H_matmul2
+   shape: M=8, N=12288, K=12288
+   latency_ms: 47.3165
+   L2 tiling: M=64, N=32, K=8192, double_buffering=true, loop_order=knm
+   L1 tiling: M=32, N=32, K=512, loop_order=knm
+   L0 tiling factors: M=1, N=2, K=2

@@ -1,0 +1,8 @@
+Hardware Configuration
+------------------------------
+Clock Frequency  : 300.00 MHz (300000000.0 Hz)
+Core Count       : 1
+L2 Cache Size    : 0.04 GB (41943040 Bytes)
+SRAM (L1) Size   : 0.19 MB (196608 Bytes)
+IO Bandwidth     : 6.40 GB/s
+Systolic Array   : 16 (H) x 16 (W)

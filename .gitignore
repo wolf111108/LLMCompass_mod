@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+llmcompass_ae/
+
+# VS Code / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# =======================================================
+# 注意：根据你的要求，需要上传 PDF 等产物文件。
+# 因此这里没有加入 *.pdf, *.csv, *.png 等格式的忽略规则。
+# 所有的生成图表和 PDF 产物都会被 Git 自动追踪并上传。
+# =======================================================

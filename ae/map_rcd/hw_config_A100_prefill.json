@@ -1,0 +1,9 @@
+{
+    "clock_freq_Hz": 300000000.0,
+    "core_count": 1,
+    "l2_size_Bytes": 41943040,
+    "io_bandwidth": 6400000000.0,
+    "sram_size": 196608,
+    "array_height": 16,
+    "array_width": 16
+}
