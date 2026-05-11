@@ -3,6 +3,7 @@ from typing import List, Tuple
 from hardware_model.device import Device
 from software_model.operators import Operator
 from software_model.utils import Tensor, DataType
+from software_model.state_manage import MappingProfiler #add
 from math import ceil, log2, log
 import time
 import statistics
@@ -19,6 +20,7 @@ class LayerNorm(Operator):
     def __init__(self, data_type: DataType):
         super().__init__(0, 0, 0, 0, data_type)
         self.shape = None
+        self.profiler = MappingProfiler({"M": None, "N": None}) #add
 
     def __call__(self, input: Tensor) -> Tensor:
         assert self.data_type == input.data_type
@@ -28,6 +30,7 @@ class LayerNorm(Operator):
         self.computational_graph = self.ComputationalGraph(
             self.M, self.N, self.data_type
         )
+        self.profiler.layer_shape = {"M": self.M, "N": self.N} #add
         return input
 
     def roofline_model(self, pcb_module: Device):
@@ -73,6 +76,7 @@ class LayerNorm(Operator):
             )
 
     def compile_and_simulate(self, pcb_module: Device, compile_mode: str):
+        self.profiler.layer_name = "LayerNorm" #add
         self.computational_graph.data_type = (
             pcb_module.compute_module.core.vector_unit.data_type
         )
@@ -114,7 +118,10 @@ class LayerNorm(Operator):
             l1_tile_M,
             l1_tile_N,
         )
+        self.profiler.start_new_mapping(mapping) #add
         cycle_count = self.simulate(self.computational_graph, mapping, pcb_module)
+        self.profiler.record_total_latency(cycle_count) #add
+        self.profiler.evaluate_current() #add
         if cycle_count < min_cycle_count:
             min_cycle_count = cycle_count
             best_mapping = mapping
@@ -159,11 +166,38 @@ class LayerNorm(Operator):
             )
 
         total_cycle_count = 0
+        profiler_dram_read_cycles = 0 #add
+        profiler_dram_write_cycles = 0 #add
+        profiler_dram_read_bytes = 0 #add
+        profiler_dram_write_bytes = 0 #add
+        profiler_l2_to_l1_read_cycles = 0 #add
+        profiler_l1_to_l2_write_cycles = 0 #add
+        profiler_l2_to_l1_read_bytes = 0 #add
+        profiler_l1_to_l2_write_bytes = 0 #add
+        profiler_compute_cycles = 0 #add
         l2_tile_count = ceil(M / l2_tile_M)
         for m in range(l2_tile_count):
             total_cycle_count += l2_tiles[m].read_cycle_count
             total_cycle_count += l2_tiles[m].compute_cycle_count
             total_cycle_count += l2_tiles[m].write_cycle_count
+            profiler_dram_read_cycles += l2_tiles[m].read_cycle_count #add
+            profiler_dram_write_cycles += l2_tiles[m].write_cycle_count #add
+            profiler_dram_read_bytes += l2_tiles[m].M * l2_tiles[m].N * data_type.word_size #add
+            profiler_dram_write_bytes += l2_tiles[m].M * l2_tiles[m].N * data_type.word_size #add
+            profiler_l2_to_l1_read_cycles += l2_tiles[m].l2_to_l1_read_cycle_count #add
+            profiler_l1_to_l2_write_cycles += l2_tiles[m].l1_to_l2_write_cycle_count #add
+            profiler_l2_to_l1_read_bytes += l2_tiles[m].l2_to_l1_read_bytes #add
+            profiler_l1_to_l2_write_bytes += l2_tiles[m].l1_to_l2_write_bytes #add
+            profiler_compute_cycles += l2_tiles[m].core_compute_cycle_count #add
+        self.profiler.record_dram_latency(profiler_dram_read_cycles + profiler_dram_write_cycles) #add
+        self.profiler.record_dram_bytes(profiler_dram_read_bytes, profiler_dram_write_bytes) #add
+        self.profiler.record_l2_to_l1_latency(profiler_l2_to_l1_read_cycles + profiler_l1_to_l2_write_cycles) #add
+        self.profiler.record_l2_l1_bytes(profiler_l2_to_l1_read_bytes, profiler_l1_to_l2_write_bytes) #add
+        self.profiler.record_compute_latency(profiler_compute_cycles) #add
+        self.profiler.record_other_stat("dram_read_cycles", profiler_dram_read_cycles) #add
+        self.profiler.record_other_stat("dram_write_cycles", profiler_dram_write_cycles) #add
+        self.profiler.record_other_stat("l2_to_l1_read_cycles", profiler_l2_to_l1_read_cycles) #add
+        self.profiler.record_other_stat("l1_to_l2_write_cycles", profiler_l1_to_l2_write_cycles) #add
         return total_cycle_count
 
     class L2TileSimulator:
@@ -177,6 +211,11 @@ class LayerNorm(Operator):
         ):
             self.M = M
             self.N = N
+            self.l2_to_l1_read_bytes = 0 #add
+            self.l1_to_l2_write_bytes = 0 #add
+            self.l2_to_l1_read_cycle_count = 0 #add
+            self.l1_to_l2_write_cycle_count = 0 #add
+            self.core_compute_cycle_count = 0 #add
             self.read_cycle_count = self.simulate_l2_tile_io_cycle_count(
                 M, N, data_type, pcb_module
             )
@@ -224,12 +263,18 @@ class LayerNorm(Operator):
                 + l1_tile.write_cycle_count
                 + l1_tile.compute_cycle_count
             )
+            l1_batch_count = ceil(l1_tile_count / pcb_module.compute_module.core_count) #add
             total_cycle_count = (
-                ceil(l1_tile_count / pcb_module.compute_module.core_count)
+                l1_batch_count #add
             ) * (
                 l1_tile_cycle_count
                 + (ceil(N / l1_tile_N) - 1) * (l1_tile.reduction_cycle_count)
             )
+            self.l2_to_l1_read_cycle_count = l1_batch_count * l1_tile.read_cycle_count * 3 #add
+            self.l1_to_l2_write_cycle_count = l1_batch_count * l1_tile.write_cycle_count #add
+            self.l2_to_l1_read_bytes = 3 * M * N * data_type.word_size #add
+            self.l1_to_l2_write_bytes = M * N * data_type.word_size #add
+            self.core_compute_cycle_count = total_cycle_count #add
             return total_cycle_count
 
     class L1TileSimulator:

@@ -8,7 +8,6 @@ from software_model.matmul import Matmul, BatchedMatmul
 from software_model.softmax import Softmax
 from software_model.layernorm import LayerNorm
 from software_model.gelu import GeLU
-from software_model.state_manage import 
 
 from software_model.utils import Tensor, DataType
 from software_model.communication_primitives import AllReduceMultiPCB

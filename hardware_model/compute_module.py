@@ -149,7 +149,7 @@ class ComputeModule:
 compute_module_dict = {
     "A100_fp16": ComputeModule(
         core_dict["SM_A100_fp16"],
-        1,
+        16,
         0.3e9,
         40 * 1024**2,
         5120,
@@ -157,7 +157,7 @@ compute_module_dict = {
     ),
     "A100_int8": ComputeModule(
         core_dict["SM_A100_int8"],
-        1,
+        16,
         0.3e9,
         40 * 1024**2,
         5120,

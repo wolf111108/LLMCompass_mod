@@ -3,6 +3,7 @@ from typing import List, Tuple
 from hardware_model.device import Device
 from software_model.operators import Operator
 from software_model.utils import Tensor, DataType
+from software_model.state_manage import MappingProfiler #add
 from math import ceil, log2, log
 import time
 import statistics
@@ -20,12 +21,14 @@ class GeLU(Operator):
     def __init__(self, data_type: DataType):
         super().__init__(0, 0, 0, 0, data_type)
         self.shape = None
+        self.profiler = MappingProfiler({"M": None}) #add
 
     def __call__(self, input: Tensor) -> Tensor:
         assert self.data_type == input.data_type
         self.shape = input.shape
         self.M = size(input.shape[:])
         self.computational_graph = self.ComputationalGraph(self.M, self.data_type)
+        self.profiler.layer_shape = {"M": self.M} #add
         return input
 
     def roofline_model(self, pcb_module: Device):
@@ -61,6 +64,8 @@ class GeLU(Operator):
             self.data_type = data_type
 
     def compile_and_simulate(self, pcb_module: Device, compile_mode: str):
+        self.profiler.layer_name = "GeLU" #add
+        self.profiler.start_new_mapping(None) #add
         self.computational_graph.data_type = (
             pcb_module.compute_module.core.vector_unit.data_type
         )
@@ -72,11 +77,15 @@ class GeLU(Operator):
         M = ceil(self.computational_graph.M / parallelism) * parallelism
         data_type = self.computational_graph.data_type
         total_io_count = M * 2 * data_type.word_size
+        dram_io_latency = total_io_count / pcb_module.io_module.bandwidth #add
+        l2_l1_io_latency = ( #add
+            total_io_count #add
+            / pcb_module.compute_module.l2_bandwidth_per_cycle #add
+            / pcb_module.compute_module.clock_freq #add
+        ) #add
         io_latency = (
-            total_io_count / pcb_module.io_module.bandwidth
-            + total_io_count
-            / pcb_module.compute_module.l2_bandwidth_per_cycle
-            / pcb_module.compute_module.clock_freq
+            dram_io_latency #add
+            + l2_l1_io_latency #add
         )
         total_flop_count = M * (
             10 + pcb_module.compute_module.core.vector_unit.flops_per_exp
@@ -88,7 +97,17 @@ class GeLU(Operator):
             / pcb_module.compute_module.clock_freq
         )
 
-        return max(compute_latency, io_latency)
+        self.latency = max(compute_latency, io_latency) #add
+        self.profiler.record_dram_bytes(M * data_type.word_size, M * data_type.word_size) #add
+        self.profiler.record_dram_latency(dram_io_latency * pcb_module.compute_module.clock_freq) #add
+        self.profiler.record_l2_l1_bytes(M * data_type.word_size, M * data_type.word_size) #add
+        self.profiler.record_l2_to_l1_latency(l2_l1_io_latency * pcb_module.compute_module.clock_freq) #add
+        self.profiler.record_compute_latency(compute_latency * pcb_module.compute_module.clock_freq) #add
+        self.profiler.record_total_latency(self.latency * pcb_module.compute_module.clock_freq) #add
+        self.profiler.record_other_stat("padded_M", M) #add
+        self.profiler.record_other_stat("total_flop_count", total_flop_count) #add
+        self.profiler.evaluate_current() #add
+        return self.latency #add
 
     def run_on_gpu(self):
         assert self.shape is not None

@@ -22,6 +22,11 @@ class BatchedMatmul(Operator):
         self.input1_shape = None
         self.input2_shape = None
         self.output_shape = None
+        self.profiler = None  # add
+        self.profiler_scale = 1  # add
+        self.profiler_extra_latency_cycles = 0  # add
+        self.profiler_extra_dram_write_bytes = 0  # add
+        self.profiler_strategy = None  # add
 
     def __call__(self, input1: Tensor, input2: Tensor) -> Tensor:
         # [b, M, K] * [b, K, N] = [b, M, N]
@@ -35,6 +40,7 @@ class BatchedMatmul(Operator):
         self.K = self.input1_shape[-1]
         assert self.input2_shape[-2] == self.K
         self.N = self.input2_shape[-1]
+        self.flop_count = 2 * self.bs * self.M * self.K * self.N  # add
         self.output_shape = self.input1_shape[:-2] + [self.M, self.N]
         output = Tensor(self.output_shape, self.data_type)
         return output
@@ -57,25 +63,41 @@ class BatchedMatmul(Operator):
     #     return self.latency
 
     def compile_and_simulate(self, pcb_module: Device, compile_mode: str, mapping_save_path: str = None, layer_name=None):
-        matmul = Matmul(self.data_type)
-        _ = matmul(Tensor([self.M, self.K]), Tensor([self.K, self.N]))
+        matmul_serialized = Matmul(self.data_type)  # add
+        _ = matmul_serialized(Tensor([self.M, self.K]), Tensor([self.K, self.N]))  # add
         matmul_latency1 = (
-            matmul.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, layer_name+"serialized") * self.bs
+            matmul_serialized.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, layer_name+"serialized") * self.bs  # add
         )
 
-        matmul = Matmul(self.data_type)
-        _ = matmul(
+        matmul_parallelized = Matmul(self.data_type)  # add
+        _ = matmul_parallelized(  # add
             Tensor([self.M, self.K * self.bs]), Tensor([self.K * self.bs, self.N])
         )
+        parallelized_extra_latency = (  # add
+            (self.bs - 1)  # add
+            * self.M  # add
+            * self.N  # add
+            * self.data_type.word_size  # add
+            / pcb_module.io_module.bandwidth  # add
+        )  # add
         matmul_latency2 = (
-            matmul.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, layer_name+"parallelized")
-            + (self.bs - 1)
-            * self.M
-            * self.N
-            * self.data_type.word_size
-            / pcb_module.io_module.bandwidth
+            matmul_parallelized.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, layer_name+"parallelized")  # add
+            + parallelized_extra_latency  # add
         )
-        self.latency = min(matmul_latency1, matmul_latency2)
+        if matmul_latency1 <= matmul_latency2:  # add
+            self.profiler = matmul_serialized.profiler  # add
+            self.profiler_scale = self.bs  # add
+            self.profiler_extra_latency_cycles = 0  # add
+            self.profiler_extra_dram_write_bytes = 0  # add
+            self.profiler_strategy = "serialized"  # add
+            self.latency = matmul_latency1  # add
+        else:  # add
+            self.profiler = matmul_parallelized.profiler  # add
+            self.profiler_scale = 1  # add
+            self.profiler_extra_latency_cycles = parallelized_extra_latency * pcb_module.compute_module.clock_freq  # add
+            self.profiler_extra_dram_write_bytes = (self.bs - 1) * self.M * self.N * self.data_type.word_size  # add
+            self.profiler_strategy = "parallelized"  # add
+            self.latency = matmul_latency2  # add
         return self.latency
 
     def run_on_gpu(
@@ -321,8 +343,9 @@ class Matmul(Operator):
             working_set_size = M * K + N * K + M * N
             total_io_count = working_set_size * self.data_type.word_size
             io_latency = total_io_count / pcb_module.io_module.bandwidth
+            io_latency_cycles = io_latency * pcb_module.compute_module.clock_freq  # add
             self.profiler.record_dram_bytes((M * K + K * N) * self.data_type.word_size, M * N * self.data_type.word_size)
-            self.profiler.record_dram_latency(io_latency / pcb_module.compute_module.clock_freq)
+            self.profiler.record_dram_latency(io_latency_cycles)  # add
             self.profiler.record_l2_to_l1_latency(0)
             total_flop_count = 2 * M * N * K
             compute_latency = (
@@ -331,7 +354,8 @@ class Matmul(Operator):
                 / pcb_module.compute_module.core_count
                 / pcb_module.compute_module.clock_freq
             )
-            self.profiler.record_compute_latency(compute_latency / pcb_module.compute_module.clock_freq)
+            compute_latency_cycles = compute_latency * pcb_module.compute_module.clock_freq  # add
+            self.profiler.record_compute_latency(compute_latency_cycles)  # add
             self.latency = max(
                 compute_latency, io_latency
             )  # + pcb_module.io_module.latency * 2
@@ -339,7 +363,7 @@ class Matmul(Operator):
             self.profiler.record_l2_l1_bytes(0, 0)  #add
             self.profiler.record_total_latency(self.latency * pcb_module.compute_module.clock_freq)  #add
             self.evaluate_current = self.profiler.evaluate_current  #add
-            #self.evaluate_current()
+            self.profiler.evaluate_current()  # add
             return self.latency
         if compile_mode == "exhaustive":
             for l2_tile_M_log2 in range(5, ceil(log2(self.computational_graph.M)) + 1):

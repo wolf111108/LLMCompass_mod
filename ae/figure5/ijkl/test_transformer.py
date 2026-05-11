@@ -5,7 +5,110 @@ from software_model.transformer import (
 from software_model.utils import data_type_dict, Tensor
 from hardware_model.system import system_dict
 import argparse
+import json  # add
 
+def print_matmul_profiler_stats(model):  # add
+    matmul_ops = {  # add
+        "Q_proj_x3_for_QKV": (model.Q_proj, 3),  # add
+        "Q_mul_K": (model.Q_mul_K, 1),  # add
+        "A_mul_V": (model.A_mul_V, 1),  # add
+        "H_matmul0": (model.H_matmul0, 1),  # add
+        "H_matmul1": (model.H_matmul1, 1),  # add
+        "H_matmul2": (model.H_matmul2, 1),  # add
+        "Softmax": (model.A_softmax, 1),  #add
+        "LayerNorm_MHA": (model.layer_norm0, 1),  #add
+        "LayerNorm_FFN": (model.layer_norm0, 1),  #add
+        "GeLU": (model.H_gelu, 1),  #add
+    }  # add
+    for name, (op, output_scale) in matmul_ops.items():  # add
+        print(f"\n===== {name} profiler =====")  # add
+        if getattr(op, "profiler", None) is None:  # add
+            print("No profiler object")  # add
+            continue  # add
+        record = op.profiler.get_best_record()  # add
+        if record is None:  # add
+            print("No profiler record")  # add
+            continue  # add
+        mapping = record["mapping"]  # add
+        profiler_scale = getattr(op, "profiler_scale", 1)  # add
+        effective_scale = output_scale * profiler_scale  # add
+        extra_latency_cycles = getattr(op, "profiler_extra_latency_cycles", 0) * output_scale  # add
+        extra_dram_write_bytes = getattr(op, "profiler_extra_dram_write_bytes", 0) * output_scale  # add
+        effective_total_latency_cycles = record["total_latency"] * effective_scale + extra_latency_cycles  # add
+        print("layer_shape:", op.profiler.layer_shape)  # add
+        print("profiler_strategy:", getattr(op, "profiler_strategy", "direct_matmul"))  # add
+        print("effective_scale:", effective_scale)  # add
+        print("raw_total_latency_cycles:", record["total_latency"])  # add
+        print("effective_total_latency_cycles:", effective_total_latency_cycles)  # add
+        print("raw_dram_bytes:", record["dram_bytes"])  # add
+        print("effective_dram_bytes:", {"read": int(record["dram_bytes"]["read"] * effective_scale), "write": int(record["dram_bytes"]["write"] * effective_scale + extra_dram_write_bytes)})  # add
+        print("dram_latency_cycles:", record["dram_latency_cycles"] * effective_scale + extra_latency_cycles)  # add
+        print("l2_to_l1_bytes:", {"read": int(record["l2_to_l1_bytes"]["read"] * effective_scale), "write": int(record["l2_to_l1_bytes"]["write"] * effective_scale)})  # add
+        print("l2_to_l1_latency_cycles:", record["l2_to_l1_latency_cycles"] * effective_scale)  # add
+        print("compute_latency_cycles:", record["compute_latency_cycles"] * effective_scale)  # add
+        print("other_stats:", record["other_stats"])  # add
+        print("mapping:", mapping.__dict__ if mapping is not None else None)  # add
+  # add
+def dump_matmul_profiler_stats(model, json_path):  # add
+    matmul_ops = {  # add
+        "Q_proj_x3_for_QKV": (model.Q_proj, 3),  # add
+        "Q_mul_K": (model.Q_mul_K, 1),  # add
+        "A_mul_V": (model.A_mul_V, 1),  # add
+        "H_matmul0": (model.H_matmul0, 1),  # add
+        "H_matmul1": (model.H_matmul1, 1),  # add
+        "H_matmul2": (model.H_matmul2, 1),  # add
+        "Softmax": (model.A_softmax, 1),  #add
+        "LayerNorm_MHA": (model.layer_norm0, 1),  #add
+        "LayerNorm_FFN": (model.layer_norm0, 1),  #add
+        "GeLU": (model.H_gelu, 1),  #add
+    }  # add
+    output_data = {}  # add
+    for name, (op, output_scale) in matmul_ops.items():  # add
+        if getattr(op, "profiler", None) is None:  # add
+            output_data[name] = {"record": None}  # add
+            continue  # add
+        record = op.profiler.get_best_record()  # add
+        if record is None:  # add
+            output_data[name] = {"record": None}  # add
+            continue  # add
+        mapping = record["mapping"]  # add
+        profiler_scale = getattr(op, "profiler_scale", 1)  # add
+        effective_scale = output_scale * profiler_scale  # add
+        extra_latency_cycles = getattr(op, "profiler_extra_latency_cycles", 0) * output_scale  # add
+        extra_dram_write_bytes = getattr(op, "profiler_extra_dram_write_bytes", 0) * output_scale  # add
+        flop_count = None  # add
+        if hasattr(op, "flop_count"):  # add
+            flop_count = op.flop_count * effective_scale  # add
+
+        output_data[name] = {  # add
+            "flop_count": int(flop_count) if flop_count is not None else None,  # add
+            "tflop_count": flop_count / 1e12 if flop_count is not None else None,  # add
+            "layer_shape": op.profiler.layer_shape,  # add
+            "profiler_strategy": getattr(op, "profiler_strategy", "direct_matmul"),  # add
+            "output_scale": output_scale,  # add
+            "profiler_scale": profiler_scale,  # add
+            "effective_scale": effective_scale,  # add
+            "raw_total_latency_cycles": record["total_latency"],  # add
+            "extra_latency_cycles": extra_latency_cycles,  # add
+            "total_latency_cycles": record["total_latency"] * effective_scale + extra_latency_cycles,  # add
+            "raw_dram_bytes": record["dram_bytes"],  # add
+            "extra_dram_write_bytes": extra_dram_write_bytes,  # add
+            "dram_bytes": {"read": int(record["dram_bytes"]["read"] * effective_scale), "write": int(record["dram_bytes"]["write"] * effective_scale + extra_dram_write_bytes)},  # add
+            "raw_dram_latency_cycles": record["dram_latency_cycles"],  # add
+            "dram_latency_cycles": record["dram_latency_cycles"] * effective_scale + extra_latency_cycles,  # add
+            "raw_l2_to_l1_bytes": record["l2_to_l1_bytes"],  # add
+            "l2_to_l1_bytes": {"read": int(record["l2_to_l1_bytes"]["read"] * effective_scale), "write": int(record["l2_to_l1_bytes"]["write"] * effective_scale)},  # add
+            "raw_l2_to_l1_latency_cycles": record["l2_to_l1_latency_cycles"],  # add
+            "l2_to_l1_latency_cycles": record["l2_to_l1_latency_cycles"] * effective_scale,  # add
+            "raw_compute_latency_cycles": record["compute_latency_cycles"],  # add
+            "compute_latency_cycles": record["compute_latency_cycles"] * effective_scale,  # add
+            "other_stats": record["other_stats"],  # add
+            "mapping": mapping.__dict__ if mapping is not None else None,  # add
+        }  # add
+    with open(json_path, "w", encoding="utf-8") as f:  # add
+        json.dump(output_data, f, indent=4, ensure_ascii=False, default=str)  # add
+    print(f"Profiler stats written to {json_path}")  # add
+  # add
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--init", action="store_true", help="initial computation")
@@ -23,7 +126,7 @@ if __name__ == "__main__":
             model = TransformerBlockInitComputationTP(
                 d_model=12288,
                 n_heads=96,
-                device_count=4,
+                device_count=1,
                 data_type=data_type_dict["fp16"],
             )
             A100_system = system_dict["A100_4_fp16"]
@@ -68,7 +171,7 @@ if __name__ == "__main__":
             model = TransformerBlockAutoRegressionTP(
                 d_model=12288,
                 n_heads=96,
-                device_count=4,
+                device_count=1,
                 data_type=data_type_dict["fp16"],
             )
             A100_system = system_dict["A100_4_fp16"]
@@ -114,3 +217,7 @@ if __name__ == "__main__":
             f.write(model.roofline_log)
         else:
             f.write(model.simluate_log)
+    if not args.roofline and (args.simgpu or args.simtpu):  # add
+        print_matmul_profiler_stats(model)  # add
+        profiler_file_name = file_name.replace(".csv", "_profiler.json")  # add
+        dump_matmul_profiler_stats(model, f"ae/figure5/ijkl/{profiler_file_name}")  # add
