@@ -19,7 +19,9 @@ OVERHEAD_SEC_BY_CSV_KEY = {  #add
     "Softmax": 1.2e-5,  #add
     "LayerNorm_MHA": 4.5e-5,  #add
     "LayerNorm_FFN": 4.5e-5,  #add
-    "GeLU": 4.5e-5,  #add
+    "Activation": 4.5e-5,  # add: OPT / generic activation
+    "GeLU": 4.5e-5,  # add: backward compatibility
+    "ReLU": 4.5e-5,  # add: if ReLU profiler is exported
 }  #add
 
 CATEGORIES = [
@@ -32,7 +34,8 @@ CATEGORIES = [
     "Softmax",
     "LayerNorm_MHA",
     "LayerNorm_FFN",
-    "GeLU",
+    #"GeLU",
+    "Activation",  # add: 这一列表示 FFN activation，OPT 里通常是 ReLU
     "AllReduce_MHA",
     "AllReduce_FFN",
 ]
@@ -47,7 +50,8 @@ OPS = [
     ("Softmax", "Softmax", 1, "Softmax"),  #add
     ("LN-MHA", "LayerNorm_MHA", 1, "LayerNorm_MHA"),  #add
     ("LN-FFN", "LayerNorm_FFN", 1, "LayerNorm_FFN"),  #add
-    ("GeLU", "GeLU", 1, "GeLU"),  #add
+    #("GeLU", "GeLU", 1, "GeLU"),  #add
+    ("Activation", ["Activation", "GeLU", "ReLU"], 1, "Activation"),  # add
 ]
 
 
@@ -92,7 +96,7 @@ def estimate_flops(record, json_key, flop_scale):  #add
     shape = record["layer_shape"]  #add
     if all(key in shape for key in ["M", "N", "K"]):  #add
         return 2 * shape["M"] * shape["N"] * shape["K"] * flop_scale  #add
-    if json_key == "GeLU":  #add
+    if json_key in ["GeLU", "Activation", "ReLU"]:  # add
         return record["other_stats"].get("total_flop_count", 0) * flop_scale  #add
     return None  #add
 
@@ -108,6 +112,10 @@ def op_metrics(data, label, json_key, scale, csv_key, csv_values):
         flop_scale = scale
         overhead_scale = scale
         other_stats_scale = scale
+    if "core_coun" in record:
+        core_count = record["core_coun"]
+    else:
+        core_count = None
     dram_read = record["dram_bytes"]["read"] * scale
     dram_write = record["dram_bytes"]["write"] * scale
     l2_read = record["l2_to_l1_bytes"]["read"] * scale
@@ -124,6 +132,7 @@ def op_metrics(data, label, json_key, scale, csv_key, csv_values):
     effective_tflops = None if flops is None else flops / seconds(total_cycles) / 1e12  # add
 
     return {
+        "core_count": core_count,
         "flop_count": flops,  # add
         "gflop_count": None if flops is None else flops / 1e9,  # add
         "tflop_count": None if flops is None else flops / 1e12,  # add
@@ -151,17 +160,27 @@ def op_metrics(data, label, json_key, scale, csv_key, csv_values):
         "mapping": record["mapping"],
     }
 
+def select_json_key(data, json_key_candidates):  # add
+    if isinstance(json_key_candidates, str):  # add
+        json_key_candidates = [json_key_candidates]  # add
+
+    for key in json_key_candidates:  # add
+        if key in data and data[key] is not None and "total_latency_cycles" in data[key]:  # add
+            return key  # add
+
+    return None  # add
 
 def collect_metrics(json_filename, csv_filename):
     data = load_json_if_exists(json_filename)
     if data is None:
         return None
     csv_values = load_csv(csv_filename)
-    metrics = [
-        op_metrics(data, *op, csv_values)
-        for op in OPS
-        if op[1] in data and "total_latency_cycles" in data[op[1]]
-    ]
+    metrics = []  # add
+    for label, json_key_candidates, scale, csv_key in OPS:  # add
+        json_key = select_json_key(data, json_key_candidates)  # add
+        if json_key is None:  # add
+            continue  # add
+        metrics.append(op_metrics(data, label, json_key, scale, csv_key, csv_values))  # add
     return {
         "json_filename": json_filename,
         "csv_filename": csv_filename,
@@ -270,11 +289,10 @@ def write_summary(datasets):
             lines.append(f"{item['label']}")
             lines.append(f"  source: {item['json_key']}")
             lines.append(f"  scale: {item['scale']}")
+            lines.append(f"  core_count: {item['core_count']}")
             lines.append(f"  latency_without_overhead_s: {item['json_latency_s']:.9f}")
             lines.append(f"  latency_with_overhead_s: {item['json_latency_with_overhead_s']:.9f}")
-            lines.append(f"  total_cycles: {item['total_cycles']:.0f}")
-            lines.append(f"  latency_without_overhead_s: {item['json_latency_s']:.9f}")
-            lines.append(f"  latency_with_overhead_s: {item['json_latency_with_overhead_s']:.9f}")
+
             lines.append(f"  total_cycles: {item['total_cycles']:.0f}")
             lines.append(f"  flop_count: {flop_count_text}")  # add
             lines.append(f"  gflop_count: {gflop_count_text}")  # add
@@ -329,6 +347,24 @@ def main():
             "json_filename": "transformerAR_A100_sim_profiler.json",
             "csv_filename": "transformerAR_A100_sim.csv",
             "latency_filename": "profiler_latency_decode.pdf",
+            "latency_ylabel": "Latency (ms)",
+            "latency_scale": 1e3,
+        },
+                {
+            "mode": "decode_opt",
+            "title": "Decode A100 OPT",
+            "json_filename": "transformerAR_A100_opt_sim_profiler.json",
+            "csv_filename": "transformerAR_A100_opt_sim.csv",
+            "latency_filename": "profiler_latency_decode_opt.pdf",
+            "latency_ylabel": "Latency (ms)",
+            "latency_scale": 1e3,
+        },
+                {
+            "mode": "prefill_opt",
+            "title": "Prefill A100 OPT",
+            "json_filename": "transformer_A100_opt_sim_profiler.json",
+            "csv_filename": "transformer_A100_opt_sim.csv",
+            "latency_filename": "profiler_latency_prefill_opt.pdf",
             "latency_ylabel": "Latency (ms)",
             "latency_scale": 1e3,
         },

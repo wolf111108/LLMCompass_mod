@@ -3,433 +3,259 @@ Clock frequency: 0.300 GHz
 Matmul overhead used by CSV: 21.0 us per matmul call
 
 CSV consistency check
-[Prefill A100]
-QKV: JSON+overhead=6.320628000s, CSV=6.320628000s, diff=8.881784197e-16s
-QK: JSON+overhead=0.596275720s, CSV=0.596275720s, diff=1.110223025e-16s
-AV: JSON+overhead=0.362101000s, CSV=0.362101000s, diff=0.000000000e+00s
-Wo: JSON+overhead=2.197914720s, CSV=2.197914720s, diff=0.000000000e+00s
-W1: JSON+overhead=8.423507040s, CSV=8.423507040s, diff=0.000000000e+00s
-W2: JSON+overhead=8.423507040s, CSV=8.423507040s, diff=0.000000000e+00s
-Softmax: JSON+overhead=1.093210980s, CSV=1.093210980s, diff=0.000000000e+00s
-LN-MHA: JSON+overhead=0.136316060s, CSV=0.136316060s, diff=0.000000000e+00s
-LN-FFN: JSON+overhead=0.136316060s, CSV=0.136316060s, diff=0.000000000e+00s
-GeLU: JSON+overhead=0.126398408s, CSV=0.126398408s, diff=0.000000000e+00s
-
-[Decode A100]
-QKV: JSON+overhead=0.035636790s, CSV=0.035636790s, diff=0.000000000e+00s
-QK: JSON+overhead=0.023813700s, CSV=0.023813700s, diff=0.000000000e+00s
-AV: JSON+overhead=0.023813700s, CSV=0.023813700s, diff=0.000000000e+00s
-Wo: JSON+overhead=0.011919270s, CSV=0.011919270s, diff=0.000000000e+00s
-W1: JSON+overhead=0.047337490s, CSV=0.047337490s, diff=0.000000000e+00s
-W2: JSON+overhead=0.047337490s, CSV=0.047337490s, diff=0.000000000e+00s
-Softmax: JSON+overhead=0.000816297s, CSV=0.000816297s, diff=0.000000000e+00s
-LN-MHA: JSON+overhead=0.000111520s, CSV=0.000111520s, diff=0.000000000e+00s
-LN-FFN: JSON+overhead=0.000111520s, CSV=0.000111520s, diff=0.000000000e+00s
-GeLU: JSON+overhead=0.000106696s, CSV=0.000106696s, diff=0.000000000e+00s
+[Decode A100 OPT]
+QKV: JSON+overhead=0.004027170s, CSV=0.004027170s, diff=0.000000000e+00s
+QK: JSON+overhead=0.016005720s, CSV=0.016005720s, diff=0.000000000e+00s
+AV: JSON+overhead=0.016005720s, CSV=0.016005720s, diff=0.000000000e+00s
+Wo: JSON+overhead=0.001342390s, CSV=0.001342390s, diff=0.000000000e+00s
+W1: JSON+overhead=0.005289910s, CSV=0.005289910s, diff=0.000000000e+00s
+W2: JSON+overhead=0.005290760s, CSV=0.005290760s, diff=0.000000000e+00s
+Softmax: JSON+overhead=0.000542043s, CSV=0.000542043s, diff=0.000000000e+00s
+LN-MHA: JSON+overhead=0.000056113s, CSV=0.000056113s, diff=0.000000000e+00s
+LN-FFN: JSON+overhead=0.000056113s, CSV=0.000056113s, diff=0.000000000e+00s
+Activation: JSON+overhead=0.000086131s, CSV=0.000086131s, diff=0.000000000e+00s
 
 Readable profiler data
-[Prefill A100]
+[Decode A100 OPT]
 QKV
   source: Q_proj_x3_for_QKV
   scale: 1
-  latency_without_overhead_s: 6.320565000
-  latency_with_overhead_s: 6.320628000
-  total_cycles: 1896169500
-  dram_total_GB: 15.627977
-  dram_read_GB: 15.023997
-  dram_write_GB: 0.603980
-  dram_latency_s: 2.441871360
+  core_count: 16
+  latency_without_overhead_s: 0.003964170
+  latency_with_overhead_s: 0.004027170
+  total_cycles: 1189251
+  flop_count: 201326592
+  gflop_count: 0.201327
+  tflop_count: 0.000201
+  dram_total_GB: 0.025362
+  dram_read_GB: 0.025264
+  dram_write_GB: 0.000098
+  dram_latency_s: 0.003962880
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 100.864623
-  l2_l1_read_GB: 86.369108
-  l2_l1_write_GB: 14.495515
-  l2_l1_latency_s: 0.068997120
-  l2_l1_effective_BW_GB_per_s: 1461.867142
-  recorded_compute_latency_s: 12.431141640
-  core_compute_from_l2_tiles_s: 6.208880640
-  effective_total_TFLOP_per_s: 0.587108
+  l2_l1_total_GB: 0.031654
+  l2_l1_read_GB: 0.031556
+  l2_l1_write_GB: 0.000098
+  l2_l1_latency_s: 0.000021760
+  l2_l1_effective_BW_GB_per_s: 1454.682353
+  recorded_compute_latency_s: 0.000143360
+  core_compute_from_l2_tiles_s: 0.000060800
+  effective_total_TFLOP_per_s: 0.050787
 
 QK
   source: Q_mul_K
   scale: 1
-  latency_without_overhead_s: 0.596254720
-  latency_with_overhead_s: 0.596275720
-  total_cycles: 178876416
-  dram_total_GB: 2.516582
-  dram_read_GB: 0.905970
-  dram_write_GB: 1.610613
-  dram_latency_s: 0.393216000
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 4.026532
-  l2_l1_read_GB: 2.415919
-  l2_l1_write_GB: 1.610613
-  l2_l1_latency_s: 0.002785280
-  l2_l1_effective_BW_GB_per_s: 1445.647059
-  recorded_compute_latency_s: 0.679649280
-  core_compute_from_l2_tiles_s: 0.338984960
-  effective_total_TFLOP_per_s: 0.345756
-
-AV
-  source: A_mul_V
-  scale: 1
-  latency_without_overhead_s: 0.362080000
-  latency_with_overhead_s: 0.362101000
-  total_cycles: 108624000
-  dram_total_GB: 1.811939
-  dram_read_GB: 1.711276
-  dram_write_GB: 0.100663
-  dram_latency_s: 0.283115520
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 4.731175
-  l2_l1_read_GB: 3.120562
-  l2_l1_write_GB: 1.610613
-  l2_l1_latency_s: 0.003224320
-  l2_l1_effective_BW_GB_per_s: 1467.340373
-  recorded_compute_latency_s: 0.689227520
-  core_compute_from_l2_tiles_s: 0.343572480
-  effective_total_TFLOP_per_s: 0.569373
-
-Wo
-  source: H_matmul0
-  scale: 1
-  latency_without_overhead_s: 2.197893720
-  latency_with_overhead_s: 2.197914720
-  total_cycles: 659368116
-  dram_total_GB: 6.115295
-  dram_read_GB: 5.309989
-  dram_write_GB: 0.805306
-  dram_latency_s: 0.955514880
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 33.017561
-  l2_l1_read_GB: 23.353885
-  l2_l1_write_GB: 9.663676
-  l2_l1_latency_s: 0.022568960
-  l2_l1_effective_BW_GB_per_s: 1462.963339
-  recorded_compute_latency_s: 4.134482520
-  core_compute_from_l2_tiles_s: 2.062745600
-  effective_total_TFLOP_per_s: 0.562789
-
-W1
-  source: H_matmul1
-  scale: 1
-  latency_without_overhead_s: 8.423486040
-  latency_with_overhead_s: 8.423507040
-  total_cycles: 2527045812
-  dram_total_GB: 20.837302
-  dram_read_GB: 20.031996
-  dram_write_GB: 0.805306
-  dram_latency_s: 3.255828480
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 134.486163
-  l2_l1_read_GB: 115.158811
-  l2_l1_write_GB: 19.327353
-  l2_l1_latency_s: 0.091996160
-  l2_l1_effective_BW_GB_per_s: 1461.867142
-  recorded_compute_latency_s: 16.574853720
-  core_compute_from_l2_tiles_s: 8.278507520
-  effective_total_TFLOP_per_s: 0.587382
-
-W2
-  source: H_matmul2
-  scale: 1
-  latency_without_overhead_s: 8.423486040
-  latency_with_overhead_s: 8.423507040
-  total_cycles: 2527045812
-  dram_total_GB: 20.837302
-  dram_read_GB: 20.031996
-  dram_write_GB: 0.805306
-  dram_latency_s: 3.255828480
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 134.486163
-  l2_l1_read_GB: 115.158811
-  l2_l1_write_GB: 19.327353
-  l2_l1_latency_s: 0.091996160
-  l2_l1_effective_BW_GB_per_s: 1461.867142
-  recorded_compute_latency_s: 16.574853720
-  core_compute_from_l2_tiles_s: 8.278507520
-  effective_total_TFLOP_per_s: 0.587382
-
-Softmax
-  source: Softmax
-  scale: 1
-  latency_without_overhead_s: 1.093198980
-  latency_with_overhead_s: 1.093210980
-  total_cycles: 327959694
-  dram_total_GB: 3.221225
-  dram_read_GB: 1.610613
-  dram_write_GB: 1.610613
-  dram_latency_s: 0.503316480
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 3.221225
-  l2_l1_read_GB: 1.610613
-  l2_l1_write_GB: 1.610613
-  l2_l1_latency_s: 0.002621700
-  l2_l1_effective_BW_GB_per_s: 1228.678137
-  recorded_compute_latency_s: 0.589882500
-  core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: N/A
-
-LN-MHA
-  source: LayerNorm_MHA
-  scale: 1
-  latency_without_overhead_s: 0.136271060
-  latency_with_overhead_s: 0.136316060
-  total_cycles: 40881318
-  dram_total_GB: 0.805306
-  dram_read_GB: 0.402653
-  dram_write_GB: 0.402653
-  dram_latency_s: 0.125829120
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 1.610613
-  l2_l1_read_GB: 1.207960
-  l2_l1_write_GB: 0.402653
-  l2_l1_latency_s: 0.001096267
-  l2_l1_effective_BW_GB_per_s: 1469.179703
-  recorded_compute_latency_s: 0.010441940
-  core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: N/A
-
-LN-FFN
-  source: LayerNorm_FFN
-  scale: 1
-  latency_without_overhead_s: 0.136271060
-  latency_with_overhead_s: 0.136316060
-  total_cycles: 40881318
-  dram_total_GB: 0.805306
-  dram_read_GB: 0.402653
-  dram_write_GB: 0.402653
-  dram_latency_s: 0.125829120
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 1.610613
-  l2_l1_read_GB: 1.207960
-  l2_l1_write_GB: 0.402653
-  l2_l1_latency_s: 0.001096267
-  l2_l1_effective_BW_GB_per_s: 1469.179703
-  recorded_compute_latency_s: 0.010441940
-  core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: N/A
-
-GeLU
-  source: GeLU
-  scale: 1
-  latency_without_overhead_s: 0.126353408
-  latency_with_overhead_s: 0.126398408
-  total_cycles: 37906022
-  dram_total_GB: 0.805306
-  dram_read_GB: 0.402653
-  dram_write_GB: 0.402653
-  dram_latency_s: 0.125829120
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.805306
-  l2_l1_read_GB: 0.402653
-  l2_l1_write_GB: 0.402653
-  l2_l1_latency_s: 0.000524288
-  l2_l1_effective_BW_GB_per_s: 1536.000000
-  recorded_compute_latency_s: 0.058982400
-  core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: 0.071701
-
-
-[Decode A100]
-QKV
-  source: Q_proj_x3_for_QKV
-  scale: 1
-  latency_without_overhead_s: 0.035573790
-  latency_with_overhead_s: 0.035636790
-  total_cycles: 10672137
-  dram_total_GB: 0.227525
-  dram_read_GB: 0.227230
-  dram_write_GB: 0.000295
-  dram_latency_s: 0.035550720
-  dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.283410
-  l2_l1_read_GB: 0.283116
-  l2_l1_write_GB: 0.000295
-  l2_l1_latency_s: 0.000186240
-  l2_l1_effective_BW_GB_per_s: 1521.748454
-  recorded_compute_latency_s: 0.013241310
-  core_compute_from_l2_tiles_s: 0.006610560
-  effective_total_TFLOP_per_s: 0.050935
-
-QK
-  source: Q_mul_K
-  scale: 1
-  latency_without_overhead_s: 0.023792700
-  latency_with_overhead_s: 0.023813700
-  total_cycles: 7137810
-  dram_total_GB: 0.152273
-  dram_read_GB: 0.151093
-  dram_write_GB: 0.001180
-  dram_latency_s: 0.023792700
+  core_count: 16
+  latency_without_overhead_s: 0.015984720
+  latency_with_overhead_s: 0.016005720
+  total_cycles: 4795416
+  flop_count: 25778192384
+  gflop_count: 25.778192
+  tflop_count: 0.025778
+  dram_total_GB: 0.102302
+  dram_read_GB: 0.100729
+  dram_write_GB: 0.001573
+  dram_latency_s: 0.015984720
   dram_effective_BW_GB_per_s: 6.400000
   l2_l1_total_GB: 0.000000
   l2_l1_read_GB: 0.000000
   l2_l1_write_GB: 0.000000
   l2_l1_latency_s: 0.000000000
   l2_l1_effective_BW_GB_per_s: 0.000000
-  recorded_compute_latency_s: 0.000983360
+  recorded_compute_latency_s: 0.000040973
   core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: 0.006348
+  effective_total_TFLOP_per_s: 1.612677
 
 AV
   source: A_mul_V
   scale: 1
-  latency_without_overhead_s: 0.023792700
-  latency_with_overhead_s: 0.023813700
-  total_cycles: 7137810
-  dram_total_GB: 0.152273
-  dram_read_GB: 0.152224
-  dram_write_GB: 0.000049
-  dram_latency_s: 0.023792700
+  core_count: 16
+  latency_without_overhead_s: 0.015984720
+  latency_with_overhead_s: 0.016005720
+  total_cycles: 4795416
+  flop_count: 25778192384
+  gflop_count: 25.778192
+  tflop_count: 0.025778
+  dram_total_GB: 0.102302
+  dram_read_GB: 0.102269
+  dram_write_GB: 0.000033
+  dram_latency_s: 0.015984720
   dram_effective_BW_GB_per_s: 6.400000
   l2_l1_total_GB: 0.000000
   l2_l1_read_GB: 0.000000
   l2_l1_write_GB: 0.000000
   l2_l1_latency_s: 0.000000000
   l2_l1_effective_BW_GB_per_s: 0.000000
-  recorded_compute_latency_s: 0.000983360
+  recorded_compute_latency_s: 0.000040973
   core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: 0.006348
+  effective_total_TFLOP_per_s: 1.612677
 
 Wo
   source: H_matmul0
   scale: 1
-  latency_without_overhead_s: 0.011898270
-  latency_with_overhead_s: 0.011919270
-  total_cycles: 3569481
-  dram_total_GB: 0.076136
-  dram_read_GB: 0.075743
-  dram_write_GB: 0.000393
-  dram_latency_s: 0.011896320
+  core_count: 16
+  latency_without_overhead_s: 0.001321390
+  latency_with_overhead_s: 0.001342390
+  total_cycles: 396417
+  flop_count: 67108864
+  gflop_count: 0.067109
+  tflop_count: 0.000067
+  dram_total_GB: 0.008454
+  dram_read_GB: 0.008421
+  dram_write_GB: 0.000033
+  dram_latency_s: 0.001320960
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.094765
-  l2_l1_read_GB: 0.094372
-  l2_l1_write_GB: 0.000393
-  l2_l1_latency_s: 0.000064000
-  l2_l1_effective_BW_GB_per_s: 1480.704000
-  recorded_compute_latency_s: 0.004430090
-  core_compute_from_l2_tiles_s: 0.002201600
-  effective_total_TFLOP_per_s: 0.050762
+  l2_l1_total_GB: 0.010551
+  l2_l1_read_GB: 0.010519
+  l2_l1_write_GB: 0.000033
+  l2_l1_latency_s: 0.000007253
+  l2_l1_effective_BW_GB_per_s: 1454.682353
+  recorded_compute_latency_s: 0.000047787
+  core_compute_from_l2_tiles_s: 0.000020267
+  effective_total_TFLOP_per_s: 0.050787
 
 W1
   source: H_matmul1
   scale: 1
-  latency_without_overhead_s: 0.047316490
-  latency_with_overhead_s: 0.047337490
-  total_cycles: 14194947
-  dram_total_GB: 0.302776
-  dram_read_GB: 0.302383
-  dram_write_GB: 0.000393
-  dram_latency_s: 0.047308800
+  core_count: 16
+  latency_without_overhead_s: 0.005268910
+  latency_with_overhead_s: 0.005289910
+  total_cycles: 1580673
+  flop_count: 268435456
+  gflop_count: 0.268435
+  tflop_count: 0.000268
+  dram_total_GB: 0.033718
+  dram_read_GB: 0.033587
+  dram_write_GB: 0.000131
+  dram_latency_s: 0.005268480
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.377881
-  l2_l1_read_GB: 0.377487
-  l2_l1_write_GB: 0.000393
-  l2_l1_latency_s: 0.000248320
-  l2_l1_effective_BW_GB_per_s: 1521.748454
-  recorded_compute_latency_s: 0.017655050
-  core_compute_from_l2_tiles_s: 0.008814080
-  effective_total_TFLOP_per_s: 0.051059
+  l2_l1_total_GB: 0.042205
+  l2_l1_read_GB: 0.042074
+  l2_l1_write_GB: 0.000131
+  l2_l1_latency_s: 0.000029013
+  l2_l1_effective_BW_GB_per_s: 1454.682353
+  recorded_compute_latency_s: 0.000191147
+  core_compute_from_l2_tiles_s: 0.000081067
+  effective_total_TFLOP_per_s: 0.050947
 
 W2
   source: H_matmul2
   scale: 1
-  latency_without_overhead_s: 0.047316490
-  latency_with_overhead_s: 0.047337490
-  total_cycles: 14194947
-  dram_total_GB: 0.302776
-  dram_read_GB: 0.302383
-  dram_write_GB: 0.000393
-  dram_latency_s: 0.047308800
+  core_count: 16
+  latency_without_overhead_s: 0.005269760
+  latency_with_overhead_s: 0.005290760
+  total_cycles: 1580928
+  flop_count: 268435456
+  gflop_count: 0.268435
+  tflop_count: 0.000268
+  dram_total_GB: 0.033718
+  dram_read_GB: 0.033686
+  dram_write_GB: 0.000033
+  dram_latency_s: 0.005268480
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.377881
-  l2_l1_read_GB: 0.377487
-  l2_l1_write_GB: 0.000393
-  l2_l1_latency_s: 0.000248320
-  l2_l1_effective_BW_GB_per_s: 1521.748454
-  recorded_compute_latency_s: 0.017655050
-  core_compute_from_l2_tiles_s: 0.008814080
-  effective_total_TFLOP_per_s: 0.051059
+  l2_l1_total_GB: 0.042009
+  l2_l1_read_GB: 0.041976
+  l2_l1_write_GB: 0.000033
+  l2_l1_latency_s: 0.000027733
+  l2_l1_effective_BW_GB_per_s: 1514.732308
+  recorded_compute_latency_s: 0.000149760
+  core_compute_from_l2_tiles_s: 0.000067840
+  effective_total_TFLOP_per_s: 0.050939
 
 Softmax
   source: Softmax
   scale: 1
-  latency_without_overhead_s: 0.000804297
-  latency_with_overhead_s: 0.000816297
-  total_cycles: 241289
-  dram_total_GB: 0.002360
-  dram_read_GB: 0.001180
-  dram_write_GB: 0.001180
-  dram_latency_s: 0.000368760
+  core_count: 16
+  latency_without_overhead_s: 0.000530043
+  latency_with_overhead_s: 0.000542043
+  total_cycles: 159013
+  flop_count: 0
+  gflop_count: 0.000000
+  tflop_count: 0.000000
+  dram_total_GB: 0.003147
+  dram_read_GB: 0.001573
+  dram_write_GB: 0.001573
+  dram_latency_s: 0.000491680
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.002360
-  l2_l1_read_GB: 0.001180
-  l2_l1_write_GB: 0.001180
-  l2_l1_latency_s: 0.000002573
-  l2_l1_effective_BW_GB_per_s: 917.123316
-  recorded_compute_latency_s: 0.000435537
+  l2_l1_total_GB: 0.003147
+  l2_l1_read_GB: 0.001573
+  l2_l1_write_GB: 0.001573
+  l2_l1_latency_s: 0.000000227
+  l2_l1_effective_BW_GB_per_s: 13882.729412
+  recorded_compute_latency_s: 0.000038363
   core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: N/A
+  effective_total_TFLOP_per_s: 0.000000
 
 LN-MHA
   source: LayerNorm_MHA
   scale: 1
-  latency_without_overhead_s: 0.000066520
-  latency_with_overhead_s: 0.000111520
-  total_cycles: 19956
-  dram_total_GB: 0.000393
-  dram_read_GB: 0.000197
-  dram_write_GB: 0.000197
-  dram_latency_s: 0.000061440
+  core_count: 16
+  latency_without_overhead_s: 0.000011113
+  latency_with_overhead_s: 0.000056113
+  total_cycles: 3334
+  flop_count: 0
+  gflop_count: 0.000000
+  tflop_count: 0.000000
+  dram_total_GB: 0.000066
+  dram_read_GB: 0.000033
+  dram_write_GB: 0.000033
+  dram_latency_s: 0.000010240
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.000786
-  l2_l1_read_GB: 0.000590
-  l2_l1_write_GB: 0.000197
-  l2_l1_latency_s: 0.000000533
-  l2_l1_effective_BW_GB_per_s: 1474.560000
-  recorded_compute_latency_s: 0.000005080
+  l2_l1_total_GB: 0.000131
+  l2_l1_read_GB: 0.000098
+  l2_l1_write_GB: 0.000033
+  l2_l1_latency_s: 0.000000093
+  l2_l1_effective_BW_GB_per_s: 1404.342857
+  recorded_compute_latency_s: 0.000000873
   core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: N/A
+  effective_total_TFLOP_per_s: 0.000000
 
 LN-FFN
   source: LayerNorm_FFN
   scale: 1
-  latency_without_overhead_s: 0.000066520
-  latency_with_overhead_s: 0.000111520
-  total_cycles: 19956
-  dram_total_GB: 0.000393
-  dram_read_GB: 0.000197
-  dram_write_GB: 0.000197
-  dram_latency_s: 0.000061440
+  core_count: 16
+  latency_without_overhead_s: 0.000011113
+  latency_with_overhead_s: 0.000056113
+  total_cycles: 3334
+  flop_count: 0
+  gflop_count: 0.000000
+  tflop_count: 0.000000
+  dram_total_GB: 0.000066
+  dram_read_GB: 0.000033
+  dram_write_GB: 0.000033
+  dram_latency_s: 0.000010240
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.000786
-  l2_l1_read_GB: 0.000590
-  l2_l1_write_GB: 0.000197
-  l2_l1_latency_s: 0.000000533
-  l2_l1_effective_BW_GB_per_s: 1474.560000
-  recorded_compute_latency_s: 0.000005080
+  l2_l1_total_GB: 0.000131
+  l2_l1_read_GB: 0.000098
+  l2_l1_write_GB: 0.000033
+  l2_l1_latency_s: 0.000000093
+  l2_l1_effective_BW_GB_per_s: 1404.342857
+  recorded_compute_latency_s: 0.000000873
   core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: N/A
+  effective_total_TFLOP_per_s: 0.000000
 
-GeLU
-  source: GeLU
+Activation
+  source: Activation
   scale: 1
-  latency_without_overhead_s: 0.000061696
-  latency_with_overhead_s: 0.000106696
-  total_cycles: 18509
-  dram_total_GB: 0.000393
-  dram_read_GB: 0.000197
-  dram_write_GB: 0.000197
-  dram_latency_s: 0.000061440
+  core_count: 16
+  latency_without_overhead_s: 0.000041131
+  latency_with_overhead_s: 0.000086131
+  total_cycles: 12339
+  flop_count: 0
+  gflop_count: 0.000000
+  tflop_count: 0.000000
+  dram_total_GB: 0.000262
+  dram_read_GB: 0.000131
+  dram_write_GB: 0.000131
+  dram_latency_s: 0.000040960
   dram_effective_BW_GB_per_s: 6.400000
-  l2_l1_total_GB: 0.000393
-  l2_l1_read_GB: 0.000197
-  l2_l1_write_GB: 0.000197
-  l2_l1_latency_s: 0.000000256
+  l2_l1_total_GB: 0.000262
+  l2_l1_read_GB: 0.000131
+  l2_l1_write_GB: 0.000131
+  l2_l1_latency_s: 0.000000171
   l2_l1_effective_BW_GB_per_s: 1536.000000
-  recorded_compute_latency_s: 0.000028800
+  recorded_compute_latency_s: 0.000001200
   core_compute_from_l2_tiles_s: 0.000000000
-  effective_total_TFLOP_per_s: 0.071701
+  effective_total_TFLOP_per_s: 0.000000
 
 
 Notes

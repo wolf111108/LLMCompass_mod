@@ -1,0 +1,548 @@
+{
+    "Q_proj_x3_for_QKV": {
+        "core_coun": 16,
+        "flop_count": 201326592,
+        "tflop_count": 0.000201326592,
+        "layer_shape": {
+            "M": 8,
+            "N": 2048,
+            "K": 2048
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 3,
+        "profiler_scale": 1,
+        "effective_scale": 3,
+        "raw_total_latency_cycles": 396417,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 1189251,
+        "raw_dram_bytes": {
+            "read": 8421376,
+            "write": 32768
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 25264128,
+            "write": 98304
+        },
+        "raw_dram_latency_cycles": 396288,
+        "dram_latency_cycles": 1188864,
+        "raw_l2_to_l1_bytes": {
+            "read": 10518528,
+            "write": 32768
+        },
+        "l2_to_l1_bytes": {
+            "read": 31555584,
+            "write": 98304
+        },
+        "raw_l2_to_l1_latency_cycles": 2176,
+        "l2_to_l1_latency_cycles": 6528,
+        "raw_compute_latency_cycles": 14336,
+        "compute_latency_cycles": 43008,
+        "other_stats": {
+            "dram_read_cycles": 394752,
+            "dram_write_cycles": 1536,
+            "l2_to_l1_read_cycles": 2112,
+            "l1_to_l2_write_cycles": 64,
+            "l1_to_core_read_bytes_model_estimate": 10977280,
+            "l1_to_core_write_bytes_model_estimate": 524288,
+            "core_compute_cycles_from_l2_tiles": 6080,
+            "core_compute_work_cycles_sum_over_cores": 97216,
+            "l1_to_core_latency_cycles_model_note": "not explicitly modeled in original LLMCompass Matmul; recorded bytes only"
+        },
+        "mapping": {
+            "l2_tile_M": 64,
+            "l2_tile_N": 32,
+            "l2_tile_K": 2048,
+            "is_l2_double_buffering": true,
+            "l1_tile_M": 32,
+            "l1_tile_N": 32,
+            "l1_tile_K": 128,
+            "l2_loop_order": "knm",
+            "l1_loop_order": "knm",
+            "l0_M_tiling_factor": 1,
+            "l0_N_tiling_factor": 2,
+            "l0_K_tiling_factor": 2,
+            "dataflow": "os"
+        }
+    },
+    "Q_mul_K": {
+        "core_coun": 16,
+        "flop_count": 25778192384,
+        "tflop_count": 0.025778192384,
+        "layer_shape": {
+            "M": 1,
+            "N": 3073,
+            "K": 64
+        },
+        "profiler_strategy": "serialized",
+        "output_scale": 1,
+        "profiler_scale": 256,
+        "effective_scale": 256,
+        "raw_total_latency_cycles": 18732.09375,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 4795416.0,
+        "raw_dram_bytes": {
+            "read": 393472,
+            "write": 6146
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 100728832,
+            "write": 1573376
+        },
+        "raw_dram_latency_cycles": 18732.09375,
+        "dram_latency_cycles": 4795416.0,
+        "raw_l2_to_l1_bytes": {
+            "read": 0,
+            "write": 0
+        },
+        "l2_to_l1_bytes": {
+            "read": 0,
+            "write": 0
+        },
+        "raw_l2_to_l1_latency_cycles": 0,
+        "l2_to_l1_latency_cycles": 0,
+        "raw_compute_latency_cycles": 48.015625,
+        "compute_latency_cycles": 12292.0,
+        "other_stats": {},
+        "mapping": null
+    },
+    "A_mul_V": {
+        "core_coun": 16,
+        "flop_count": 25778192384,
+        "tflop_count": 0.025778192384,
+        "layer_shape": {
+            "M": 1,
+            "N": 64,
+            "K": 3073
+        },
+        "profiler_strategy": "serialized",
+        "output_scale": 1,
+        "profiler_scale": 256,
+        "effective_scale": 256,
+        "raw_total_latency_cycles": 18732.09375,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 4795416.0,
+        "raw_dram_bytes": {
+            "read": 399490,
+            "write": 128
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 102269440,
+            "write": 32768
+        },
+        "raw_dram_latency_cycles": 18732.09375,
+        "dram_latency_cycles": 4795416.0,
+        "raw_l2_to_l1_bytes": {
+            "read": 0,
+            "write": 0
+        },
+        "l2_to_l1_bytes": {
+            "read": 0,
+            "write": 0
+        },
+        "raw_l2_to_l1_latency_cycles": 0,
+        "l2_to_l1_latency_cycles": 0,
+        "raw_compute_latency_cycles": 48.015625,
+        "compute_latency_cycles": 12292.0,
+        "other_stats": {},
+        "mapping": null
+    },
+    "H_matmul0": {
+        "core_coun": 16,
+        "flop_count": 67108864,
+        "tflop_count": 6.7108864e-05,
+        "layer_shape": {
+            "M": 8,
+            "N": 2048,
+            "K": 2048
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 1,
+        "profiler_scale": 1,
+        "effective_scale": 1,
+        "raw_total_latency_cycles": 396417,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 396417,
+        "raw_dram_bytes": {
+            "read": 8421376,
+            "write": 32768
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 8421376,
+            "write": 32768
+        },
+        "raw_dram_latency_cycles": 396288,
+        "dram_latency_cycles": 396288,
+        "raw_l2_to_l1_bytes": {
+            "read": 10518528,
+            "write": 32768
+        },
+        "l2_to_l1_bytes": {
+            "read": 10518528,
+            "write": 32768
+        },
+        "raw_l2_to_l1_latency_cycles": 2176,
+        "l2_to_l1_latency_cycles": 2176,
+        "raw_compute_latency_cycles": 14336,
+        "compute_latency_cycles": 14336,
+        "other_stats": {
+            "dram_read_cycles": 394752,
+            "dram_write_cycles": 1536,
+            "l2_to_l1_read_cycles": 2112,
+            "l1_to_l2_write_cycles": 64,
+            "l1_to_core_read_bytes_model_estimate": 10977280,
+            "l1_to_core_write_bytes_model_estimate": 524288,
+            "core_compute_cycles_from_l2_tiles": 6080,
+            "core_compute_work_cycles_sum_over_cores": 97216,
+            "l1_to_core_latency_cycles_model_note": "not explicitly modeled in original LLMCompass Matmul; recorded bytes only"
+        },
+        "mapping": {
+            "l2_tile_M": 64,
+            "l2_tile_N": 32,
+            "l2_tile_K": 2048,
+            "is_l2_double_buffering": true,
+            "l1_tile_M": 32,
+            "l1_tile_N": 32,
+            "l1_tile_K": 128,
+            "l2_loop_order": "knm",
+            "l1_loop_order": "knm",
+            "l0_M_tiling_factor": 1,
+            "l0_N_tiling_factor": 2,
+            "l0_K_tiling_factor": 2,
+            "dataflow": "os"
+        }
+    },
+    "H_matmul1": {
+        "core_coun": 16,
+        "flop_count": 268435456,
+        "tflop_count": 0.000268435456,
+        "layer_shape": {
+            "M": 8,
+            "N": 8192,
+            "K": 2048
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 1,
+        "profiler_scale": 1,
+        "effective_scale": 1,
+        "raw_total_latency_cycles": 1580673,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 1580673,
+        "raw_dram_bytes": {
+            "read": 33587200,
+            "write": 131072
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 33587200,
+            "write": 131072
+        },
+        "raw_dram_latency_cycles": 1580544,
+        "dram_latency_cycles": 1580544,
+        "raw_l2_to_l1_bytes": {
+            "read": 42074112,
+            "write": 131072
+        },
+        "l2_to_l1_bytes": {
+            "read": 42074112,
+            "write": 131072
+        },
+        "raw_l2_to_l1_latency_cycles": 8704,
+        "l2_to_l1_latency_cycles": 8704,
+        "raw_compute_latency_cycles": 57344,
+        "compute_latency_cycles": 57344,
+        "other_stats": {
+            "dram_read_cycles": 1574400,
+            "dram_write_cycles": 6144,
+            "l2_to_l1_read_cycles": 8448,
+            "l1_to_l2_write_cycles": 256,
+            "l1_to_core_read_bytes_model_estimate": 43909120,
+            "l1_to_core_write_bytes_model_estimate": 2097152,
+            "core_compute_cycles_from_l2_tiles": 24320,
+            "core_compute_work_cycles_sum_over_cores": 388864,
+            "l1_to_core_latency_cycles_model_note": "not explicitly modeled in original LLMCompass Matmul; recorded bytes only"
+        },
+        "mapping": {
+            "l2_tile_M": 64,
+            "l2_tile_N": 32,
+            "l2_tile_K": 2048,
+            "is_l2_double_buffering": true,
+            "l1_tile_M": 32,
+            "l1_tile_N": 32,
+            "l1_tile_K": 128,
+            "l2_loop_order": "knm",
+            "l1_loop_order": "knm",
+            "l0_M_tiling_factor": 1,
+            "l0_N_tiling_factor": 2,
+            "l0_K_tiling_factor": 2,
+            "dataflow": "os"
+        }
+    },
+    "H_matmul2": {
+        "core_coun": 16,
+        "flop_count": 268435456,
+        "tflop_count": 0.000268435456,
+        "layer_shape": {
+            "M": 8,
+            "N": 2048,
+            "K": 8192
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 1,
+        "profiler_scale": 1,
+        "effective_scale": 1,
+        "raw_total_latency_cycles": 1580928,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 1580928,
+        "raw_dram_bytes": {
+            "read": 33685504,
+            "write": 32768
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 33685504,
+            "write": 32768
+        },
+        "raw_dram_latency_cycles": 1580544,
+        "dram_latency_cycles": 1580544,
+        "raw_l2_to_l1_bytes": {
+            "read": 41975808,
+            "write": 32768
+        },
+        "l2_to_l1_bytes": {
+            "read": 41975808,
+            "write": 32768
+        },
+        "raw_l2_to_l1_latency_cycles": 8320,
+        "l2_to_l1_latency_cycles": 8320,
+        "raw_compute_latency_cycles": 44928,
+        "compute_latency_cycles": 44928,
+        "other_stats": {
+            "dram_read_cycles": 1579008,
+            "dram_write_cycles": 1536,
+            "l2_to_l1_read_cycles": 8256,
+            "l1_to_l2_write_cycles": 64,
+            "l1_to_core_read_bytes_model_estimate": 42958848,
+            "l1_to_core_write_bytes_model_estimate": 1048576,
+            "core_compute_cycles_from_l2_tiles": 20352,
+            "core_compute_work_cycles_sum_over_cores": 325568,
+            "l1_to_core_latency_cycles_model_note": "not explicitly modeled in original LLMCompass Matmul; recorded bytes only"
+        },
+        "mapping": {
+            "l2_tile_M": 64,
+            "l2_tile_N": 32,
+            "l2_tile_K": 8192,
+            "is_l2_double_buffering": true,
+            "l1_tile_M": 32,
+            "l1_tile_N": 32,
+            "l1_tile_K": 256,
+            "l2_loop_order": "knm",
+            "l1_loop_order": "knm",
+            "l0_M_tiling_factor": 1,
+            "l0_N_tiling_factor": 2,
+            "l0_K_tiling_factor": 2,
+            "dataflow": "os"
+        }
+    },
+    "Softmax": {
+        "core_coun": 16,
+        "flop_count": 0,
+        "tflop_count": 0.0,
+        "layer_shape": {
+            "M": 256,
+            "N": 3073
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 1,
+        "profiler_scale": 1,
+        "effective_scale": 1,
+        "raw_total_latency_cycles": 159013.0,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 159013.0,
+        "raw_dram_bytes": {
+            "read": 1573376,
+            "write": 1573376
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 1573376,
+            "write": 1573376
+        },
+        "raw_dram_latency_cycles": 147504,
+        "dram_latency_cycles": 147504,
+        "raw_l2_to_l1_bytes": {
+            "read": 1573376,
+            "write": 1573376
+        },
+        "l2_to_l1_bytes": {
+            "read": 1573376,
+            "write": 1573376
+        },
+        "raw_l2_to_l1_latency_cycles": 68,
+        "l2_to_l1_latency_cycles": 68,
+        "raw_compute_latency_cycles": 11509.0,
+        "compute_latency_cycles": 11509.0,
+        "other_stats": {
+            "dram_read_cycles": 73752,
+            "dram_write_cycles": 73752,
+            "l2_to_l1_read_cycles": 34,
+            "l1_to_l2_write_cycles": 34
+        },
+        "mapping": {
+            "l2_tile_M": 256,
+            "l2_tile_N": 3073,
+            "is_l2_double_buffering": false,
+            "l1_tile_M": 1,
+            "l1_tile_N": 3073,
+            "is_l1_double_buffering": true
+        }
+    },
+    "LayerNorm_MHA": {
+        "core_coun": 16,
+        "flop_count": 0,
+        "tflop_count": 0.0,
+        "layer_shape": {
+            "M": 8,
+            "N": 2048
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 1,
+        "profiler_scale": 1,
+        "effective_scale": 1,
+        "raw_total_latency_cycles": 3334.0,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 3334.0,
+        "raw_dram_bytes": {
+            "read": 32768,
+            "write": 32768
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 32768,
+            "write": 32768
+        },
+        "raw_dram_latency_cycles": 3072,
+        "dram_latency_cycles": 3072,
+        "raw_l2_to_l1_bytes": {
+            "read": 98304,
+            "write": 32768
+        },
+        "l2_to_l1_bytes": {
+            "read": 98304,
+            "write": 32768
+        },
+        "raw_l2_to_l1_latency_cycles": 28,
+        "l2_to_l1_latency_cycles": 28,
+        "raw_compute_latency_cycles": 262.0,
+        "compute_latency_cycles": 262.0,
+        "other_stats": {
+            "dram_read_cycles": 1536,
+            "dram_write_cycles": 1536,
+            "l2_to_l1_read_cycles": 21,
+            "l1_to_l2_write_cycles": 7
+        },
+        "mapping": {
+            "l2_tile_M": 8,
+            "l2_tile_N": 2048,
+            "l1_tile_M": 8,
+            "l1_tile_N": 2048
+        }
+    },
+    "LayerNorm_FFN": {
+        "core_coun": 16,
+        "flop_count": 0,
+        "tflop_count": 0.0,
+        "layer_shape": {
+            "M": 8,
+            "N": 2048
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 1,
+        "profiler_scale": 1,
+        "effective_scale": 1,
+        "raw_total_latency_cycles": 3334.0,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 3334.0,
+        "raw_dram_bytes": {
+            "read": 32768,
+            "write": 32768
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 32768,
+            "write": 32768
+        },
+        "raw_dram_latency_cycles": 3072,
+        "dram_latency_cycles": 3072,
+        "raw_l2_to_l1_bytes": {
+            "read": 98304,
+            "write": 32768
+        },
+        "l2_to_l1_bytes": {
+            "read": 98304,
+            "write": 32768
+        },
+        "raw_l2_to_l1_latency_cycles": 28,
+        "l2_to_l1_latency_cycles": 28,
+        "raw_compute_latency_cycles": 262.0,
+        "compute_latency_cycles": 262.0,
+        "other_stats": {
+            "dram_read_cycles": 1536,
+            "dram_write_cycles": 1536,
+            "l2_to_l1_read_cycles": 21,
+            "l1_to_l2_write_cycles": 7
+        },
+        "mapping": {
+            "l2_tile_M": 8,
+            "l2_tile_N": 2048,
+            "l1_tile_M": 8,
+            "l1_tile_N": 2048
+        }
+    },
+    "Activation": {
+        "core_coun": 16,
+        "flop_count": 0,
+        "tflop_count": 0.0,
+        "layer_shape": {
+            "M": 65536
+        },
+        "profiler_strategy": "direct_matmul",
+        "output_scale": 1,
+        "profiler_scale": 1,
+        "effective_scale": 1,
+        "raw_total_latency_cycles": 12339.2,
+        "extra_latency_cycles": 0,
+        "total_latency_cycles": 12339.2,
+        "raw_dram_bytes": {
+            "read": 131072,
+            "write": 131072
+        },
+        "extra_dram_write_bytes": 0,
+        "dram_bytes": {
+            "read": 131072,
+            "write": 131072
+        },
+        "raw_dram_latency_cycles": 12288.0,
+        "dram_latency_cycles": 12288.0,
+        "raw_l2_to_l1_bytes": {
+            "read": 131072,
+            "write": 131072
+        },
+        "l2_to_l1_bytes": {
+            "read": 131072,
+            "write": 131072
+        },
+        "raw_l2_to_l1_latency_cycles": 51.2,
+        "l2_to_l1_latency_cycles": 51.2,
+        "raw_compute_latency_cycles": 360.0,
+        "compute_latency_cycles": 360.0,
+        "other_stats": {
+            "padded_M": 65536,
+            "total_flop_count": 2949120
+        },
+        "mapping": null
+    }
+}
