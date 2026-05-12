@@ -93,7 +93,7 @@ def dump_matmul_profiler_stats(model, json_path):  # add
         extra_dram_write_bytes = getattr(op, "profiler_extra_dram_write_bytes", 0) * output_scale  # add
         flop_count = None  # add
         if hasattr(op, "flop_count"):  # add
-            flop_count = op.flop_count * effective_scale  # add
+            flop_count = op.flop_count * output_scale  # add
 
         output_data[name] = {  # add
             "core_coun": A100_system.device.compute_module.core_count,  # add
