@@ -1,0 +1,278 @@
+{
+    "Q_proj_x3_for_QKV": {
+        "core_count": 16,
+        "flop_count": 51539607552,
+        "layer_shape": {
+            "M": 2048,
+            "N": 2048,
+            "K": 2048
+        },
+        "profiler_strategy": "N/A",
+        "effective_scale": 3,
+        "weight_write_bytes": 81071424,
+        "weight_write_bytes_human": "81.07 MB",
+        "weight_write_cycles_raw": 281498,
+        "weight_write_count": 6,
+        "weight_write_count_raw": 2,
+        "activation_read_trips": 6.0,
+        "activation_write_trips": 3.0,
+        "dram_read_bytes": 25165824,
+        "dram_write_bytes": 12582912,
+        "K_factor": 1,
+        "M_factor": 8,
+        "N_factor": 2,
+        "tile_L2": [
+            256,
+            1024,
+            2048
+        ],
+        "tile_L1": [
+            256,
+            1024,
+            2048
+        ],
+        "loop_order": "nmk",
+        "double_buffering": true,
+        "total_latency_cycles": 4485246,
+        "compute_latency_cycles": 2796240,
+        "dram_latency_cycles": 860928,
+        "compute_ratio": 0.6234,
+        "clock_freq_Hz": 1000000000.0,
+        "tops": 11.4909
+    },
+    "Q_mul_K": {
+        "core_count": 16,
+        "flop_count": 17179869184,
+        "layer_shape": {
+            "M": 2048,
+            "N": 2048,
+            "K": 2048
+        },
+        "profiler_strategy": "parallelized",
+        "effective_scale": 1,
+        "weight_write_bytes": 27023808,
+        "weight_write_bytes_human": "27.02 MB",
+        "weight_write_cycles_raw": 281498,
+        "weight_write_count": 2,
+        "weight_write_count_raw": 2,
+        "activation_read_trips": 2.0,
+        "activation_write_trips": 32.0,
+        "dram_read_bytes": 8388608,
+        "dram_write_bytes": 134217728,
+        "K_factor": 1,
+        "M_factor": 8,
+        "N_factor": 2,
+        "tile_L2": [
+            256,
+            1024,
+            2048
+        ],
+        "tile_L1": [
+            256,
+            1024,
+            2048
+        ],
+        "loop_order": "nmk",
+        "double_buffering": true,
+        "total_latency_cycles": 10221486.295302013,
+        "compute_latency_cycles": 932080,
+        "dram_latency_cycles": 9013380.295302013,
+        "compute_ratio": 0.0912,
+        "clock_freq_Hz": 1000000000.0,
+        "tops": 1.6808
+    },
+    "A_mul_V": {
+        "core_count": 16,
+        "flop_count": 17179869184,
+        "layer_shape": {
+            "M": 2048,
+            "N": 64,
+            "K": 2048
+        },
+        "profiler_strategy": "serialized",
+        "effective_scale": 32,
+        "weight_write_bytes": 27024384,
+        "weight_write_bytes_human": "27.02 MB",
+        "weight_write_cycles_raw": 8797,
+        "weight_write_count": 32,
+        "weight_write_count_raw": 1,
+        "activation_read_trips": 32.0,
+        "activation_write_trips": 32.0,
+        "dram_read_bytes": 134217728,
+        "dram_write_bytes": 4194304,
+        "K_factor": 1,
+        "M_factor": 16,
+        "N_factor": 1,
+        "tile_L2": [
+            128,
+            64,
+            2048
+        ],
+        "tile_L1": [
+            128,
+            64,
+            2048
+        ],
+        "loop_order": "nmk",
+        "double_buffering": true,
+        "total_latency_cycles": 1495456,
+        "compute_latency_cycles": 932352,
+        "dram_latency_cycles": 369152,
+        "compute_ratio": 0.6235,
+        "clock_freq_Hz": 1000000000.0,
+        "tops": 11.488
+    },
+    "H_matmul0": {
+        "core_count": 16,
+        "flop_count": 17179869184,
+        "layer_shape": {
+            "M": 2048,
+            "N": 2048,
+            "K": 2048
+        },
+        "profiler_strategy": "N/A",
+        "effective_scale": 1,
+        "weight_write_bytes": 27023808,
+        "weight_write_bytes_human": "27.02 MB",
+        "weight_write_cycles_raw": 281498,
+        "weight_write_count": 2,
+        "weight_write_count_raw": 2,
+        "activation_read_trips": 2.0,
+        "activation_write_trips": 1.0,
+        "dram_read_bytes": 8388608,
+        "dram_write_bytes": 4194304,
+        "K_factor": 1,
+        "M_factor": 8,
+        "N_factor": 2,
+        "tile_L2": [
+            256,
+            1024,
+            2048
+        ],
+        "tile_L1": [
+            256,
+            1024,
+            2048
+        ],
+        "loop_order": "nmk",
+        "double_buffering": true,
+        "total_latency_cycles": 1495082,
+        "compute_latency_cycles": 932080,
+        "dram_latency_cycles": 286976,
+        "compute_ratio": 0.6234,
+        "clock_freq_Hz": 1000000000.0,
+        "tops": 11.4909
+    },
+    "H_matmul1": {
+        "core_count": 16,
+        "flop_count": 68719476736,
+        "layer_shape": {
+            "M": 2048,
+            "N": 8192,
+            "K": 2048
+        },
+        "profiler_strategy": "N/A",
+        "effective_scale": 1,
+        "weight_write_bytes": 108095232,
+        "weight_write_bytes_human": "108.10 MB",
+        "weight_write_cycles_raw": 1125992,
+        "weight_write_count": 8,
+        "weight_write_count_raw": 8,
+        "activation_read_trips": 8.0,
+        "activation_write_trips": 1.0,
+        "dram_read_bytes": 33554432,
+        "dram_write_bytes": 16777216,
+        "K_factor": 1,
+        "M_factor": 8,
+        "N_factor": 2,
+        "tile_L2": [
+            256,
+            1024,
+            2048
+        ],
+        "tile_L1": [
+            256,
+            1024,
+            2048
+        ],
+        "loop_order": "nmk",
+        "double_buffering": true,
+        "total_latency_cycles": 5980328,
+        "compute_latency_cycles": 3728320,
+        "dram_latency_cycles": 1147904,
+        "compute_ratio": 0.6234,
+        "clock_freq_Hz": 1000000000.0,
+        "tops": 11.4909
+    },
+    "H_matmul2": {
+        "core_count": 16,
+        "flop_count": 68719476736,
+        "layer_shape": {
+            "M": 2048,
+            "N": 2048,
+            "K": 8192
+        },
+        "profiler_strategy": "N/A",
+        "effective_scale": 1,
+        "weight_write_bytes": 108095232,
+        "weight_write_bytes_human": "108.10 MB",
+        "weight_write_cycles_raw": 1125992,
+        "weight_write_count": 8,
+        "weight_write_count_raw": 8,
+        "activation_read_trips": 8.0,
+        "activation_write_trips": 1.0,
+        "dram_read_bytes": 134217728,
+        "dram_write_bytes": 4194304,
+        "K_factor": 1,
+        "M_factor": 16,
+        "N_factor": 1,
+        "tile_L2": [
+            32,
+            256,
+            8192
+        ],
+        "tile_L1": [
+            32,
+            256,
+            8192
+        ],
+        "loop_order": "nmk",
+        "double_buffering": true,
+        "total_latency_cycles": 5135976,
+        "compute_latency_cycles": 3728384,
+        "dram_latency_cycles": 369152,
+        "compute_ratio": 0.7259,
+        "clock_freq_Hz": 1000000000.0,
+        "tops": 13.38
+    },
+    "_overall": {
+        "total_flop_count": 240518168576,
+        "total_flop_count_GFLOP": 240.5182,
+        "total_latency_cycles": 28813574.29530201,
+        "total_latency_us": 28813.5743,
+        "clock_freq_Hz": 1000000000.0,
+        "tops": 8.3474,
+        "total_weight_write_bytes": 378333888,
+        "total_weight_write_bytes_human": "378.33 MB"
+    },
+    "_full_model_summary": {
+        "mode": "Prefill",
+        "n_layers": 24,
+        "output_token_length": 1,
+        "total_tokens_times_layers": 24,
+        "note": "单层统计 × n_layers",
+        "total_latency_cycles": 691525783.0872483,
+        "total_latency_us": 691525.7831,
+        "total_latency_ms": 691.5258,
+        "total_flop_count": 5772436045824,
+        "total_flop_count_GFLOP": 5772.436,
+        "total_flop_count_TFLOP": 5.772436,
+        "tops": 8.3474,
+        "total_weight_write_bytes": 9080013312,
+        "total_weight_write_bytes_human": "9.08 GB",
+        "total_dram_read_bytes": 8254390272,
+        "total_dram_read_bytes_human": "8.25 GB",
+        "total_dram_write_bytes": 4227858432,
+        "total_dram_write_bytes_human": "4.23 GB"
+    }
+}

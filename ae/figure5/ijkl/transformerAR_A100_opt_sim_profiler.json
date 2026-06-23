@@ -67,8 +67,8 @@
     },
     "Q_mul_K": {
         "core_coun": 16,
-        "flop_count": 25778192384,
-        "tflop_count": 0.025778192384,
+        "flop_count": 100696064,
+        "tflop_count": 0.000100696064,
         "layer_shape": {
             "M": 1,
             "N": 3073,
@@ -109,8 +109,8 @@
     },
     "A_mul_V": {
         "core_coun": 16,
-        "flop_count": 25778192384,
-        "tflop_count": 0.025778192384,
+        "flop_count": 100696064,
+        "tflop_count": 0.000100696064,
         "layer_shape": {
             "M": 1,
             "N": 64,

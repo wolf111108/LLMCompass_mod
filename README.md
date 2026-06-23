@@ -173,3 +173,10 @@ python -m compileall -q .
 4. 补齐 `environment.yml` 中实际使用但未显式声明的依赖，例如 `numpy`、`pandas`。
 5. 给核心入口增加最小 smoke test，例如成本模型示例、单个 Matmul roofline、单个配置模板加载。
 
+
+# Hardware Evaluation步骤描述
+1. 打开configs文件，复制
+
+如果which python指向的是错误环境的python，可以执行：
+export PATH=/home/zyzhao/.conda/envs/llmcompass_ae/bin:$PATH
+

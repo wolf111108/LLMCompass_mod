@@ -1,0 +1,149 @@
+Initial computation
+CIM config: array_height=64, array_width=48, Nbank=24, core_count=16
+simulating q_proj
+simulating k_proj
+simulating v_proj
+simulating q_mul_k
+simulating a_mul_v
+simulating o_proj
+simulating gate_proj
+simulating up_proj
+simulating down_proj
+
+================================================================================
+Matmul操作统计 (仅Matmul)
+================================================================================
+
+----- Q_mul_K -----
+  Shape: M=8192, N=8192, K=1536
+  策略: parallelized, effective_scale=1
+  Weight写入: 12.58 MB (raw: 12.58 MB, cycles=844496)
+  Weight重写次数: 16 (raw: 16, per complete weight: 16.0)
+  Activation读取次数: 16.00x (input act), 写出次数: 12.00x (output act)
+  DRAM read: 201.33 MB, write: 805.31 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(256, 512, 1536), L1=(256, 512, 1536), loop=nmk, double_buf=True
+  Latency (pipeline后): total=77261809 cycles, compute=22369792 cycles, dram=54309665 cycles
+    compute占比=29.0% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 2.67 TOPS (flop=206.16 GFLOP, latency=77261.81 us, freq=1.00 GHz)
+
+----- A_mul_V -----
+  Shape: M=8192, N=128, K=8192
+  策略: serialized, effective_scale=12
+  Weight写入: 12.58 MB (raw: 1.05 MB, cycles=70375)
+  Weight重写次数: 12 (raw: 1, per complete weight: 12.0)
+  Activation读取次数: 12.00x (input act), 写出次数: 12.00x (output act)
+  DRAM read: 805.31 MB, write: 12.58 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(32, 128, 8192), L1=(32, 128, 8192), loop=nmk, double_buf=True
+  Latency (pipeline后): total=24059604 cycles, compute=22370304 cycles, dram=1895424 cycles
+    compute占比=93.0% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 8.57 TOPS (flop=206.16 GFLOP, latency=24059.60 us, freq=1.00 GHz)
+
+----- H_matmul0 -----
+  Shape: M=8192, N=1536, K=1536
+  策略: N/A, effective_scale=1
+  Weight写入: 2.36 MB (raw: 2.36 MB, cycles=158343)
+  Weight重写次数: 3 (raw: 3, per complete weight: 3.0)
+  Activation读取次数: 3.00x (input act), 写出次数: 1.00x (output act)
+  DRAM read: 37.75 MB, write: 12.58 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(256, 512, 1536), L1=(256, 512, 1536), loop=nmk, double_buf=True
+  Latency (pipeline后): total=5197191 cycles, compute=4194336 cycles, dram=893664 cycles
+    compute占比=80.7% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 7.44 TOPS (flop=38.65 GFLOP, latency=5197.19 us, freq=1.00 GHz)
+
+----- Q_proj -----
+  Shape: M=8192, N=1536, K=1536
+  策略: N/A, effective_scale=1
+  Weight写入: 2.36 MB (raw: 2.36 MB, cycles=158343)
+  Weight重写次数: 3 (raw: 3, per complete weight: 3.0)
+  Activation读取次数: 3.00x (input act), 写出次数: 1.00x (output act)
+  DRAM read: 37.75 MB, write: 12.58 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(256, 512, 1536), L1=(256, 512, 1536), loop=nmk, double_buf=True
+  Latency (pipeline后): total=5197191 cycles, compute=4194336 cycles, dram=893664 cycles
+    compute占比=80.7% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 7.44 TOPS (flop=38.65 GFLOP, latency=5197.19 us, freq=1.00 GHz)
+
+----- K_proj -----
+  Shape: M=8192, N=256, K=1536
+  策略: N/A, effective_scale=1
+  Weight写入: 393.22 KB (raw: 393.22 KB, cycles=26391)
+  Weight重写次数: 1 (raw: 1, per complete weight: 1.0)
+  Activation读取次数: 1.00x (input act), 写出次数: 1.00x (output act)
+  DRAM read: 12.58 MB, write: 2.10 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(512, 256, 1536), L1=(512, 256, 1536), loop=nmk, double_buf=True
+  Latency (pipeline后): total=866199 cycles, compute=699056 cycles, dram=157136 cycles
+    compute占比=80.7% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 7.44 TOPS (flop=6.44 GFLOP, latency=866.20 us, freq=1.00 GHz)
+
+----- V_proj -----
+  Shape: M=8192, N=256, K=1536
+  策略: N/A, effective_scale=1
+  Weight写入: 393.22 KB (raw: 393.22 KB, cycles=26391)
+  Weight重写次数: 1 (raw: 1, per complete weight: 1.0)
+  Activation读取次数: 1.00x (input act), 写出次数: 1.00x (output act)
+  DRAM read: 12.58 MB, write: 2.10 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(512, 256, 1536), L1=(512, 256, 1536), loop=nmk, double_buf=True
+  Latency (pipeline后): total=866199 cycles, compute=699056 cycles, dram=157136 cycles
+    compute占比=80.7% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 7.44 TOPS (flop=6.44 GFLOP, latency=866.20 us, freq=1.00 GHz)
+
+----- Gate_proj -----
+  Shape: M=8192, N=8960, K=1536
+  策略: N/A, effective_scale=1
+  Weight写入: 13.76 MB (raw: 13.76 MB, cycles=923668)
+  Weight重写次数: 18 (raw: 18, per complete weight: 18.0)
+  Activation读取次数: 18.00x (input act), 写出次数: 1.00x (output act)
+  DRAM read: 226.49 MB, write: 73.40 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(512, 512, 1536), L1=(512, 512, 1536), loop=nmk, double_buf=True
+  Latency (pipeline后): total=30316948 cycles, compute=24466960 cycles, dram=5221232 cycles
+    compute占比=80.7% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 7.44 TOPS (flop=225.49 GFLOP, latency=30316.95 us, freq=1.00 GHz)
+
+----- Up_proj -----
+  Shape: M=8192, N=8960, K=1536
+  策略: N/A, effective_scale=1
+  Weight写入: 13.76 MB (raw: 13.76 MB, cycles=923668)
+  Weight重写次数: 18 (raw: 18, per complete weight: 18.0)
+  Activation读取次数: 18.00x (input act), 写出次数: 1.00x (output act)
+  DRAM read: 226.49 MB, write: 73.40 MB
+  Mapping: K_factor=1, M_factor=16, N_factor=1
+  Tile分割: L2=(512, 512, 1536), L1=(512, 512, 1536), loop=nmk, double_buf=True
+  Latency (pipeline后): total=30316948 cycles, compute=24466960 cycles, dram=5221232 cycles
+    compute占比=80.7% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 7.44 TOPS (flop=225.49 GFLOP, latency=30316.95 us, freq=1.00 GHz)
+
+----- Down_proj -----
+  Shape: M=8192, N=1536, K=8960
+  策略: N/A, effective_scale=1
+  Weight写入: 110.10 MB (raw: 110.10 MB, cycles=7389480)
+  Weight重写次数: 54 (raw: 54, per complete weight: 54.0)
+  Activation读取次数: 3.00x (input act), 写出次数: 18.00x (output act)
+  DRAM read: 220.20 MB, write: 226.49 MB
+  Mapping: K_factor=16, M_factor=1, N_factor=1
+  Tile分割: L2=(1024, 512, 512), L1=(1024, 512, 512), loop=nmk, double_buf=True
+  Latency (pipeline后): total=51483648 cycles, compute=24467112 cycles, dram=15488088 cycles
+    compute占比=47.5% (compute/raw sum, pipeline中compute与DRAM read重叠)
+  TOPS: 4.38 TOPS (flop=225.49 GFLOP, latency=51483.65 us, freq=1.00 GHz)
+
+================================================================================
+所有Matmul总计: latency=225565737 cycles, compute=127927912 cycles, dram=84237241 cycles, compute占比=56.7%
+所有Matmul总计: TOPS=5.23 TOPS (总FLOP=1178.97 GFLOP, 总延迟=225565.74 us)
+所有Matmul总计: weight_write_bytes=168.30 MB
+
+================================================================================
+完整模型 Prefill 汇总 (n_layers=28, output_token_length=1, 总layer步数=28)
+  总延迟: 6315840626 cycles (6315840.63 us, 6315.8406 ms)
+  总FLOP: 33011.12 GFLOP (33.0111 TFLOP)
+  总TOPS: 5.23 TOPS
+  总 Weight写入: 4.71 GB
+  总 DRAM read: 49.85 GB
+  总 DRAM write: 34.18 GB
+  注意: Prefill阶段, 单层统计 × n_layers
+================================================================================
+Profiler stats written to ae/figure5/ijkl/transformer_CIM_qwen_sim_profiler.json

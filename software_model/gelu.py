@@ -101,6 +101,8 @@ class GeLU(Operator):
         self.profiler.record_dram_bytes(M * data_type.word_size, M * data_type.word_size) #add
         self.profiler.record_dram_latency(dram_io_latency * pcb_module.compute_module.clock_freq) #add
         self.profiler.record_l2_l1_bytes(M * data_type.word_size, M * data_type.word_size) #add
+        self.profiler.record_l2_l1_weight_bytes(0, 0) #add
+        self.profiler.record_l2_l1_activation_bytes(M * data_type.word_size, M * data_type.word_size) #add
         self.profiler.record_l2_to_l1_latency(l2_l1_io_latency * pcb_module.compute_module.clock_freq) #add
         self.profiler.record_compute_latency(compute_latency * pcb_module.compute_module.clock_freq) #add
         self.profiler.record_total_latency(self.latency * pcb_module.compute_module.clock_freq) #add

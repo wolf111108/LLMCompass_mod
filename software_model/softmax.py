@@ -80,39 +80,63 @@ class Softmax(Operator):
         )
         l2_tile_M = min(l2_tile_M, M)
         is_l2_double_buffering = False
-        for l1_N_tiling_factor in [1, 2, 4, 8, 16, 32]:
-            l1_tile_N = ceil(l2_tile_N / l1_N_tiling_factor)
-            for l1_tile_M in [1, 2, 4, 8, 16, 32, 64, 128, 256]:
-                for is_l1_double_buffering in [True, False]:
-                    if is_l1_double_buffering:
-                        if (
-                            l1_tile_M * l1_tile_N * data_type.word_size
-                            > pcb_module.compute_module.core.SRAM_size // 2
-                        ):
-                            continue
-                    else:
-                        if (
-                            l1_tile_M * l1_tile_N * data_type.word_size
-                            > pcb_module.compute_module.core.SRAM_size
-                        ):
-                            continue
-                    mapping = self.Mapping(
-                        l2_tile_M,
-                        l2_tile_N,
-                        is_l2_double_buffering,
-                        l1_tile_M,
-                        l1_tile_N,
-                        is_l1_double_buffering,
-                    )
-                    self.profiler.start_new_mapping(mapping) #add
-                    cycle_count = self.simulate(
-                        self.computational_graph, mapping, pcb_module
-                    )
-                    self.profiler.record_total_latency(cycle_count) #add
-                    self.profiler.evaluate_current() #add
-                    if cycle_count < min_cycle_count:
-                        min_cycle_count = cycle_count
-                        best_mapping = mapping
+
+        if compile_mode == "heuristic-CIM":
+            # CIM has no L1 SRAM, softmax works directly from L2
+            l1_tile_N = N
+            l1_tile_M = l2_tile_M
+            is_l1_double_buffering = False
+            mapping = self.Mapping(
+                l2_tile_M,
+                l2_tile_N,
+                is_l2_double_buffering,
+                l1_tile_M,
+                l1_tile_N,
+                is_l1_double_buffering,
+            )
+            self.profiler.start_new_mapping(mapping)
+            cycle_count = self.simulate(
+                self.computational_graph, mapping, pcb_module
+            )
+            self.profiler.record_total_latency(cycle_count)
+            self.profiler.evaluate_current()
+            if cycle_count < min_cycle_count:
+                min_cycle_count = cycle_count
+                best_mapping = mapping
+        else:
+            for l1_N_tiling_factor in [1, 2, 4, 8, 16, 32]:
+                l1_tile_N = ceil(l2_tile_N / l1_N_tiling_factor)
+                for l1_tile_M in [1, 2, 4, 8, 16, 32, 64, 128, 256]:
+                    for is_l1_double_buffering in [True, False]:
+                        if is_l1_double_buffering:
+                            if (
+                                l1_tile_M * l1_tile_N * data_type.word_size
+                                > pcb_module.compute_module.core.SRAM_size // 2
+                            ):
+                                continue
+                        else:
+                            if (
+                                l1_tile_M * l1_tile_N * data_type.word_size
+                                > pcb_module.compute_module.core.SRAM_size
+                            ):
+                                continue
+                        mapping = self.Mapping(
+                            l2_tile_M,
+                            l2_tile_N,
+                            is_l2_double_buffering,
+                            l1_tile_M,
+                            l1_tile_N,
+                            is_l1_double_buffering,
+                        )
+                        self.profiler.start_new_mapping(mapping) #add
+                        cycle_count = self.simulate(
+                            self.computational_graph, mapping, pcb_module
+                        )
+                        self.profiler.record_total_latency(cycle_count) #add
+                        self.profiler.evaluate_current() #add
+                        if cycle_count < min_cycle_count:
+                            min_cycle_count = cycle_count
+                            best_mapping = mapping
         self.best_mapping = best_mapping
         self.best_cycle_count = min_cycle_count
         self.best_latency = min_cycle_count / pcb_module.compute_module.clock_freq
@@ -191,6 +215,8 @@ class Softmax(Operator):
         self.profiler.record_dram_bytes(profiler_dram_read_bytes, profiler_dram_write_bytes) #add
         self.profiler.record_l2_to_l1_latency(profiler_l2_to_l1_read_cycles + profiler_l1_to_l2_write_cycles) #add
         self.profiler.record_l2_l1_bytes(profiler_l2_to_l1_read_bytes, profiler_l1_to_l2_write_bytes) #add
+        self.profiler.record_l2_l1_weight_bytes(0, 0) #add
+        self.profiler.record_l2_l1_activation_bytes(profiler_l2_to_l1_read_bytes, profiler_l1_to_l2_write_bytes) #add
         self.profiler.record_compute_latency(profiler_compute_cycles) #add
         self.profiler.record_other_stat("dram_read_cycles", profiler_dram_read_cycles) #add
         self.profiler.record_other_stat("dram_write_cycles", profiler_dram_write_cycles) #add

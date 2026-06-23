@@ -47,7 +47,7 @@ class BatchedMatmul(Operator):
 
     def roofline_model(self, pcb_module: Device):
         matmul = Matmul(self.data_type)
-        _ = matmul(Tensor([self.M, self.K]), Tensor([self.K, self.N]))
+        _ = matmul(Tensor([self.M, self.K], self.data_type), Tensor([self.K, self.N], self.data_type))
         matmul_latency = matmul.roofline_model(pcb_module)
         self.roofline_latency = matmul_latency * self.bs
         return self.roofline_latency
@@ -63,16 +63,20 @@ class BatchedMatmul(Operator):
     #     return self.latency
 
     def compile_and_simulate(self, pcb_module: Device, compile_mode: str, mapping_save_path: str = None, layer_name=None):
+        # print(f"  BatchedMatmul {layer_name}: bs={self.bs} M={self.M} N={self.N} K={self.K}", flush=True)
         matmul_serialized = Matmul(self.data_type)  # add
-        _ = matmul_serialized(Tensor([self.M, self.K]), Tensor([self.K, self.N]))  # add
+        _ = matmul_serialized(Tensor([self.M, self.K], self.data_type), Tensor([self.K, self.N], self.data_type))  # add
+        # print(f"  BatchedMatmul {layer_name}: running serialized DSE...", flush=True)
         matmul_latency1 = (
             matmul_serialized.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, layer_name+"serialized") * self.bs  # add
         )
+        # print(f"  BatchedMatmul {layer_name}: serialized latency={matmul_latency1*1e3:.4f}ms", flush=True)
 
         matmul_parallelized = Matmul(self.data_type)  # add
         _ = matmul_parallelized(  # add
-            Tensor([self.M, self.K * self.bs]), Tensor([self.K * self.bs, self.N])
+            Tensor([self.M, self.K * self.bs], self.data_type), Tensor([self.K * self.bs, self.N], self.data_type)
         )
+        # print(f"  BatchedMatmul {layer_name}: running parallelized DSE (K={self.K * self.bs})...", flush=True)
         parallelized_extra_latency = (  # add
             (self.bs - 1)  # add
             * self.M  # add
@@ -84,6 +88,7 @@ class BatchedMatmul(Operator):
             matmul_parallelized.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, layer_name+"parallelized")  # add
             + parallelized_extra_latency  # add
         )
+        # print(f"  BatchedMatmul {layer_name}: parallelized latency={matmul_latency2*1e3:.4f}ms", flush=True)
         if matmul_latency1 <= matmul_latency2:  # add
             self.profiler = matmul_serialized.profiler  # add
             self.profiler_scale = self.bs  # add
@@ -144,6 +149,9 @@ class BatchedMatmul(Operator):
 
 
 class Matmul(Operator):
+    # Default sparsity ratio for CIM computation (0 = no sparsity, 1 = all zeros)
+    DEFAULT_CIM_SPARSITY_RATIO = 0.8
+
     def __init__(self, data_type: DataType):
         super().__init__(0, 0, 0, 0, data_type)
         self.input1_shape = None
@@ -152,6 +160,7 @@ class Matmul(Operator):
         self.look_up_table = None
         self.best_mapping = None
         self.profiler = MappingProfiler({"M": None, "N": None, "K": None})
+        self.sparsity_ratio = self.DEFAULT_CIM_SPARSITY_RATIO
 
     def __call__(self, input1: Tensor, input2: Tensor) -> Tensor:
         # [bs, M, K] * [K, N] = [bs, M, N]
@@ -319,6 +328,36 @@ class Matmul(Operator):
 
         return list(permutations)
 
+    @staticmethod
+    def find_kmn_factors(core_count, total_K, total_M, total_N, tile_K, tile_M, tile_N):
+        """Find K, M, N parallelization factors across cores with K > M > N priority.
+
+        Returns (K_factor, M_factor, N_factor) such that K_factor * M_factor * N_factor <= core_count.
+        Prioritizes maximizing K_factor first, then M_factor, then N_factor.
+        """
+        max_K_tiles = ceil(total_K / tile_K) if tile_K > 0 else 1
+        max_M_tiles = ceil(total_M / tile_M) if tile_M > 0 else 1
+        max_N_tiles = ceil(total_N / tile_N) if tile_N > 0 else 1
+
+        best = (1, 1, 1)
+        for K_factor in range(min(core_count, max_K_tiles), 0, -1):
+            remaining_after_K = core_count // K_factor
+            if remaining_after_K == 0:
+                continue
+            for M_factor in range(min(remaining_after_K, max_M_tiles), 0, -1):
+                remaining_after_M = remaining_after_K // M_factor
+                if remaining_after_M == 0:
+                    continue
+                N_factor = min(remaining_after_M, max_N_tiles)
+                if K_factor * M_factor * N_factor <= core_count:
+                    # Prefer higher K, then higher M
+                    if (K_factor, M_factor, N_factor) > best:
+                        best = (K_factor, M_factor, N_factor)
+                    break  # Take the highest M for this K
+            if best[0] == K_factor and best[1] == min(remaining_after_K, max_M_tiles):
+                break  # Found a good enough K
+        return best
+
     def compile_and_simulate(
         self,
         pcb_module: Device,
@@ -361,6 +400,8 @@ class Matmul(Operator):
             )  # + pcb_module.io_module.latency * 2
             #self.profiler.record_total_latency(self.latency / pcb_module.compute_module.clock_freq)
             self.profiler.record_l2_l1_bytes(0, 0)  #add
+            self.profiler.record_l2_l1_weight_bytes(0, 0)  #add
+            self.profiler.record_l2_l1_activation_bytes(0, 0)  #add
             self.profiler.record_total_latency(self.latency * pcb_module.compute_module.clock_freq)  #add
             self.evaluate_current = self.profiler.evaluate_current  #add
             self.profiler.evaluate_current()  # add
@@ -387,15 +428,7 @@ class Matmul(Operator):
                             // self.data_type.word_size
                         ):
                             continue
-                        elif (
-                            working_set_size
-                            <= pcb_module.compute_module.l2_size
-                            // self.data_type.word_size
-                            // 2
-                        ):
-                            is_l2_double_buffering = True
-                        else:
-                            is_l2_double_buffering = False
+                        is_l2_double_buffering = True
                         for l1_tile_M_log2 in range(5, l2_tile_M_log2 + 1):
                             l1_tile_M = 2**l1_tile_M_log2
                             for l1_tile_N_log2 in range(5, l2_tile_N_log2 + 1):
@@ -494,17 +527,7 @@ class Matmul(Operator):
                         > pcb_module.compute_module.l2_size // self.data_type.word_size
                     ):
                         continue
-                    elif (
-                        working_set_size
-                        <= pcb_module.compute_module.l2_size
-                        // self.data_type.word_size
-                        // 2
-                    ):
-                        is_l2_double_buffering = True
-                    else:
-                        is_l2_double_buffering = False
-
-                    assert is_l2_double_buffering
+                    is_l2_double_buffering = True
 
                     for l1_tile_M in [32, 64, 128, 256]:
                         l1_tile_M = min(l1_tile_M, l2_tile_M, l2_tile_N)
@@ -601,15 +624,7 @@ class Matmul(Operator):
                             // self.data_type.word_size
                         ):
                             continue
-                        elif (
-                            working_set_size
-                            <= pcb_module.compute_module.l2_size
-                            // self.data_type.word_size
-                            // 2
-                        ):
-                            is_l2_double_buffering = True
-                        else:
-                            is_l2_double_buffering = False
+                        is_l2_double_buffering = True
 
                         for l1_tile_M in [32, 64, 128, 256]:
                             if l1_tile_M > min(l2_tile_M, l2_tile_N):
@@ -812,6 +827,115 @@ class Matmul(Operator):
                         if cycle_count < min_cycle_count:
                             min_cycle_count = cycle_count
                             best_mapping = mapping
+        elif compile_mode == "heuristic-CIM":
+            # CIM-specific compilation: no L1, weights stored in CIM macro
+            # L2 only stores activation tiles
+            # Mapping priority: K -> M -> N (to minimize CIM weight writes)
+            # Optimization criterion: minimize weight_write_cycles (not latency)
+            import sys
+            cim_macro = pcb_module.compute_module.core.cim_macro
+            core_count = pcb_module.compute_module.core_count
+            weight_buffer_bytes = cim_macro.weight_buffer_size
+            l2_size = pcb_module.compute_module.l2_size
+            l2_bw = pcb_module.compute_module.l2_bandwidth_per_cycle
+            input_ws = cim_macro.input_word_size
+            output_ws = cim_macro.output_word_size
+
+            # Include 1 in tile sizes to handle decode (M=1) case
+            cim_Mtile_sizes = [1, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+            cim_tile_sizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+            # print(f"    [CIM DSE] Starting: M={M}, N={N}, K={K}, "
+            #       f"core_count={core_count}, layer={layer_name}", flush=True)
+
+            # Track best mapping by weight_write_cycles (primary) and latency (secondary)
+            min_weight_write_cycles = 2**63 - 1
+            best_weight_mapping = None
+            best_weight_cycle_count = 2**63 - 1  # latency of the best weight mapping
+
+            i = 0
+            cim_start_time = time.time()
+            for tile_K in cim_tile_sizes:
+                # print(f"Testing tile_K={tile_K}, total_K={K}", flush=True)
+                if tile_K > K:
+                    tile_K = K
+                # Weight buffer constraint: tile_K * tile_N * input_word_size <= weight_buffer_bytes
+                max_tile_N_from_weight = weight_buffer_bytes // (tile_K * input_ws) if tile_K * input_ws > 0 else K
+                max_tile_N = min(N, max_tile_N_from_weight)
+                if max_tile_N < 1:
+                    continue
+                for tile_N in cim_tile_sizes:
+                    # print(f"Testing tile_N={tile_N}, total_N={N}", flush=True)
+                    if tile_N > max_tile_N:
+                        continue
+                    # Check weight buffer constraint
+                    if tile_K * tile_N * input_ws > weight_buffer_bytes:
+                        continue
+                    # L2 activation constraint: tile_M * tile_K + tile_M * tile_N <= l2_size / word_size
+                    # (only activation, no weight in L2)
+                    max_tile_M_from_l2 = l2_size // (self.data_type.word_size * (tile_K + tile_N)) if (tile_K + tile_N) > 0 else M
+                    max_tile_M = min(M, max_tile_M_from_l2)
+                    if max_tile_M < 1:
+                        continue
+                    for tile_M in cim_Mtile_sizes:
+                        # print(f"Testing tile_M={tile_M}, total_M={M}", flush=True)
+                        if tile_M > max_tile_M:
+                            continue
+                        # Check L2 activation constraint (no weight, only activation)
+                        activation_l2 = (tile_M * tile_K + tile_M * tile_N) * self.data_type.word_size
+                        if activation_l2 > l2_size:
+                            continue
+
+                        # Double buffering if activation fits in half L2
+                        is_l2_double_buffering = True
+
+                        # Use nmk loop order: N outermost, M middle, K innermost
+                        # This enables weight reuse across M iterations (weight depends on K and N only)
+                        mapping = self.Mapping(
+                            tile_M, tile_N, tile_K,
+                            is_l2_double_buffering,
+                            tile_M, tile_N, tile_K,  # No L1 tiling: l1 = l2
+                            "nmk",  # L2 loop order: N first, then M, then K (weight reuse across M)
+                            "nmk",  # L1 loop order: same (not used in CIM)
+                            1, 1, 1,  # l0 factors (not used in CIM)
+                        )
+                        # i += 1
+                        # if i % 50 == 0:
+                        #     elapsed = time.time() - cim_start_time
+                        #     best_ww = min_weight_write_cycles if min_weight_write_cycles < 2**63 - 1 else float('inf')
+                        #     print(f"    [CIM DSE] iter={i}, tile_K={tile_K}, tile_N={tile_N}, tile_M={tile_M}, "
+                        #           f"best_ww_cycles={best_ww}, elapsed={elapsed:.1f}s", flush=True)
+                        self.profiler.start_new_mapping(mapping)
+                        cycle_count = self.simulate_cim(
+                            self.computational_graph,
+                            mapping,
+                            pcb_module,
+                            self.sparsity_ratio,
+                        )
+                        weight_write_cycles = self.last_cim_weight_write_cycles
+                        self.profiler.record_total_latency(cycle_count)
+                        self.profiler.evaluate_current()
+                        # Select mapping with smallest weight_write_cycles
+                        # Tie-break by latency (cycle_count)
+                        if (weight_write_cycles < min_weight_write_cycles or
+                            (weight_write_cycles == min_weight_write_cycles and cycle_count < best_weight_cycle_count)):
+                            min_weight_write_cycles = weight_write_cycles
+                            best_weight_cycle_count = cycle_count
+                            best_weight_mapping = mapping
+                            weight_write_bytes = self.last_cim_weight_write_bytes
+                            # print(f"    [CIM DSE] New best! tile_M={tile_M}, tile_N={tile_N}, tile_K={tile_K}, "
+                            #       f"weight_write_cycles={weight_write_cycles}, "
+                            #       f"weight_write_bytes={weight_write_bytes}, "
+                            #       f"latency_cycles={cycle_count}", flush=True)
+            cim_elapsed = time.time() - cim_start_time
+            best_latency_ms = best_weight_cycle_count / pcb_module.compute_module.clock_freq * 1e3 if best_weight_cycle_count < 2**63 - 1 else float('inf')
+            # print(f"    [CIM DSE] Done: {i} iterations in {cim_elapsed:.1f}s, "
+            #       f"best_weight_write_cycles={min_weight_write_cycles}, "
+            #       f"best_weight_write_bytes={self.last_cim_weight_write_bytes}, "
+            #       f"best_latency={best_latency_ms:.4f}ms", flush=True)
+
+            # Use the best weight mapping as the final result
+            best_mapping = best_weight_mapping
+            min_cycle_count = best_weight_cycle_count
         else:
             raise ValueError(f"compile_mode {compile_mode} not supported")
         self.best_mapping = best_mapping
@@ -882,16 +1006,10 @@ class Matmul(Operator):
         l2_tile_N = mapping.l2_tile_N
         l2_tile_K = mapping.l2_tile_K
 
-        if mapping.is_l2_double_buffering:
-            assert (
-                l2_tile_M * l2_tile_N + l2_tile_N * l2_tile_K + l2_tile_M * l2_tile_K
-                <= pcb_module.compute_module.l2_size // self.data_type.word_size // 2
-            )
-        else:
-            assert (
-                l2_tile_M * l2_tile_N + l2_tile_N * l2_tile_K + l2_tile_M * l2_tile_K
-                <= pcb_module.compute_module.l2_size // self.data_type.word_size
-            )
+        assert (
+            l2_tile_M * l2_tile_N + l2_tile_N * l2_tile_K + l2_tile_M * l2_tile_K
+            <= pcb_module.compute_module.l2_size // self.data_type.word_size
+        )
 
         M_l2_t = M // l2_tile_M
         N_l2_t = N // l2_tile_N
@@ -1108,6 +1226,9 @@ class Matmul(Operator):
             total_cycle_count += ceil(l2_tiles[-1, -1, -1].K_reduction_cycle_count)
             profiler_compute_cycle_total += ceil(l2_tiles[-1, -1, -1].K_reduction_cycle_count)  #add
         profiler_l2_to_l1_read_bytes = 0  #add
+        profiler_weight_l2_to_l1_read_bytes = 0  #add
+        profiler_activation_l2_to_l1_read_bytes = 0  #add
+        profiler_activation_l1_to_l2_write_bytes = 0  #add
         profiler_l1_to_l2_write_bytes = 0  #add
         profiler_l2_to_l1_read_cycles = 0  #add
         profiler_l1_to_l2_write_cycles = 0  #add
@@ -1117,7 +1238,10 @@ class Matmul(Operator):
         profiler_core_compute_work_cycles = 0  #add
         for profiler_l2_tile in l2_tiles.flat:  #add
             profiler_l2_to_l1_read_bytes += getattr(profiler_l2_tile, "l2_to_l1_read_bytes", 0)  #add
+            profiler_weight_l2_to_l1_read_bytes += getattr(profiler_l2_tile, "weight_l2_to_l1_read_bytes", 0)  #add
+            profiler_activation_l2_to_l1_read_bytes += getattr(profiler_l2_tile, "activation_l2_to_l1_read_bytes", 0)  #add
             profiler_l1_to_l2_write_bytes += getattr(profiler_l2_tile, "l1_to_l2_write_bytes", 0)  #add
+            profiler_activation_l1_to_l2_write_bytes += getattr(profiler_l2_tile, "l1_to_l2_write_bytes", 0)  #add
             profiler_l2_to_l1_read_cycles += getattr(profiler_l2_tile, "l2_to_l1_read_cycle_count", 0)  #add
             profiler_l1_to_l2_write_cycles += getattr(profiler_l2_tile, "l1_to_l2_write_cycle_count", 0)  #add
             profiler_l1_to_core_read_bytes += getattr(profiler_l2_tile, "l1_to_core_read_bytes", 0)  #add
@@ -1128,6 +1252,8 @@ class Matmul(Operator):
         self.profiler.record_dram_bytes(int(profiler_dram_read_bytes_total), int(profiler_dram_write_bytes_total))  #add
         self.profiler.record_l2_to_l1_latency(profiler_l2_to_l1_read_cycles + profiler_l1_to_l2_write_cycles)  #add
         self.profiler.record_l2_l1_bytes(int(profiler_l2_to_l1_read_bytes), int(profiler_l1_to_l2_write_bytes))  #add
+        self.profiler.record_l2_l1_weight_bytes(int(profiler_weight_l2_to_l1_read_bytes), 0)  #add
+        self.profiler.record_l2_l1_activation_bytes(int(profiler_activation_l2_to_l1_read_bytes), int(profiler_activation_l1_to_l2_write_bytes))  #add
         self.profiler.record_compute_latency(profiler_core_compute_cycles + profiler_compute_cycle_total)  #add
         self.profiler.current_record["other_stats"]["dram_read_cycles"] = profiler_dram_read_cycle_total  #add
         self.profiler.current_record["other_stats"]["dram_write_cycles"] = profiler_dram_write_cycle_total  #add
@@ -1145,6 +1271,174 @@ class Matmul(Operator):
         return total_cycle_count #+ ceil(
         # pcb_module.io_module.latency * 2 * pcb_module.compute_module.clock_freq
         # )
+
+    def simulate_cim(
+        self,
+        computational_graph: ComputationalGraph,
+        mapping: Mapping,
+        pcb_module: Device,
+        sparsity_ratio: float = 0.8,
+    ) -> int:
+        """CIM-specific simulation: no L1, weights stored in CIM macro.
+
+        Architecture:
+        - No L1 cache (SRAM_size = 0)
+        - L2 stores only activation tiles
+        - CIM macro stores weight tiles (size = array_height * array_width * Nbank KB)
+        - Compute throughput = max_throughput * (1 - sparsity_ratio)
+        - Weight write latency = weight_tile_bytes / array_width
+        - Core mapping priority: K -> M -> N
+        """
+        M = computational_graph.M
+        N = computational_graph.N
+        K = computational_graph.K
+        data_type = computational_graph.data_type
+
+        cim_macro = pcb_module.compute_module.core.cim_macro
+        core_count = pcb_module.compute_module.core_count
+        clock_freq = pcb_module.compute_module.clock_freq
+        l2_size = pcb_module.compute_module.l2_size
+        l2_bw = pcb_module.compute_module.l2_bandwidth_per_cycle
+        input_ws = cim_macro.input_word_size
+        output_ws = cim_macro.output_word_size
+        array_width = cim_macro.array_width
+
+        # Weight write bandwidth: use wu_io_module if available, otherwise fallback to array_width
+        if hasattr(pcb_module, 'wu_io_module') and pcb_module.wu_io_module is not None:
+            weight_write_bw_per_cycle = pcb_module.wu_io_module.bandwidth / clock_freq
+        else:
+            weight_write_bw_per_cycle = array_width
+
+        tile_M = mapping.l2_tile_M
+        tile_N = mapping.l2_tile_N
+        tile_K = mapping.l2_tile_K
+
+        # Effective throughput considering sparsity
+        # effective_throughput = cim_macro.max_throughput_per_cycle * (1 - sparsity_ratio)
+        effective_throughput = cim_macro.max_throughput_per_cycle
+        if effective_throughput <= 0:
+            effective_throughput = cim_macro.max_throughput_per_cycle  # fallback
+
+        num_K_tiles = ceil(K / tile_K)
+        num_M_tiles = ceil(M / tile_M)
+        num_N_tiles = ceil(N / tile_N)
+
+        # Determine K-M-N parallelization factors across cores
+        K_factor, M_factor, N_factor = self.find_kmn_factors(
+            core_count, K, M, N, tile_K, tile_M, tile_N
+        )
+
+        # Per-core tile dimensions
+        per_core_K = ceil(tile_K / max(K_factor, 1))
+        per_core_M = ceil(tile_M / max(M_factor, 1))
+        per_core_N = ceil(tile_N / max(N_factor, 1))
+
+        total_cycle_count = 0
+        profiler_dram_read_bytes_total = 0
+        profiler_dram_write_bytes_total = 0
+        profiler_dram_read_cycle_total = 0
+        profiler_dram_write_cycle_total = 0
+        profiler_compute_cycle_total = 0
+        profiler_weight_write_cycles_total = 0
+        profiler_weight_write_bytes_total = 0
+
+        # Iterate over tiles in nmk order: N outermost, M middle, K innermost
+        # Weight [tile_K, tile_N] is reused across M iterations, only written when (n_idx, k_idx) changes
+        prev_nk = None
+        for m_idx, n_idx, k_idx in self.generate_tile_loops(
+            num_M_tiles, num_N_tiles, num_K_tiles, "nmk"
+        ):
+            # Actual tile dimensions (handle remainder)
+            cur_tile_M = min(tile_M, M - m_idx * tile_M)
+            cur_tile_N = min(tile_N, N - n_idx * tile_N)
+            cur_tile_K = min(tile_K, K - k_idx * tile_K)
+
+            # Per-core compute cycles
+            per_core_M_actual = min(per_core_M, cur_tile_M)
+            per_core_N_actual = min(per_core_N, cur_tile_N)
+            per_core_K_actual = min(per_core_K, cur_tile_K)
+
+            total_ops = 2 * cur_tile_M * cur_tile_N * cur_tile_K
+            # Total compute cycles: all cores work in parallel
+            # Each core handles a portion, total throughput = core_count_used * effective_throughput
+            cores_used = K_factor * M_factor * N_factor
+            total_compute_cycles = ceil(total_ops / (cores_used * effective_throughput))
+
+            # Weight write: only when (n_idx, k_idx) changes (weight reuse across M iterations)
+            current_nk = (n_idx, k_idx)
+            if current_nk != prev_nk:
+                weight_tile_bytes = cur_tile_K * cur_tile_N * input_ws
+                weight_write_cycles = ceil(weight_tile_bytes / weight_write_bw_per_cycle)
+                profiler_weight_write_bytes_total += weight_tile_bytes
+                prev_nk = current_nk
+            else:
+                weight_write_cycles = 0
+
+            # Activation read from DRAM: only M*K (input activation)
+            activation_read_bytes = cur_tile_M * cur_tile_K * data_type.word_size
+            activation_read_cycles = ceil(activation_read_bytes / l2_bw)
+
+            # Activation write to DRAM: M*N (output activation)
+            activation_write_bytes = cur_tile_M * cur_tile_N * output_ws
+            activation_write_cycles_dram = ceil(
+                activation_write_bytes
+                / (pcb_module.io_module.bandwidth / pcb_module.compute_module.clock_freq)
+            )
+
+            # K reduction: if K_factor > 1, partial sums need to be reduced
+            K_reduction_cycles = 0
+            if K_factor > 1:
+                K_reduction_cycles = ceil(
+                    cur_tile_M * cur_tile_N * output_ws / l2_bw
+                ) * (K_factor - 1)
+
+            # Profiling
+            profiler_dram_read_bytes_total += activation_read_bytes
+            profiler_dram_write_bytes_total += activation_write_bytes
+            profiler_compute_cycle_total += total_compute_cycles
+            profiler_weight_write_cycles_total += weight_write_cycles
+
+            # Pipeline: max(compute, activation_read) + weight_write + K_reduction
+            tile_cycles = (
+                max(total_compute_cycles, activation_read_cycles)
+                + weight_write_cycles
+                + K_reduction_cycles
+            )
+            profiler_dram_read_cycle_total += activation_read_cycles
+            profiler_dram_write_cycle_total += activation_write_cycles_dram
+
+            total_cycle_count += tile_cycles
+
+        # Add final write
+        total_cycle_count += profiler_dram_write_cycle_total
+
+        # Record profiler stats
+        self.profiler.record_dram_bytes(
+            int(profiler_dram_read_bytes_total),
+            int(profiler_dram_write_bytes_total)
+        )
+        self.profiler.record_dram_latency(
+            profiler_dram_read_cycle_total + profiler_dram_write_cycle_total
+        )
+        self.profiler.record_l2_to_l1_latency(0)  # No L1 in CIM
+        self.profiler.record_l2_l1_bytes(0, 0)
+        self.profiler.record_l2_l1_weight_bytes(0, 0)
+        self.profiler.record_l2_l1_activation_bytes(0, 0)
+        self.profiler.record_compute_latency(profiler_compute_cycle_total)
+        self.profiler.current_record["other_stats"]["sparsity_ratio"] = sparsity_ratio
+        self.profiler.current_record["other_stats"]["effective_throughput"] = effective_throughput
+        self.profiler.current_record["other_stats"]["K_factor"] = K_factor
+        self.profiler.current_record["other_stats"]["M_factor"] = M_factor
+        self.profiler.current_record["other_stats"]["N_factor"] = N_factor
+        self.profiler.current_record["other_stats"]["weight_write_cycles"] = profiler_weight_write_cycles_total
+        self.profiler.current_record["other_stats"]["weight_write_bytes"] = int(profiler_weight_write_bytes_total)
+        self.profiler.current_record["other_stats"]["cim_arch"] = "CIM_macro"
+
+        # Store weight_write_cycles and bytes as instance attribute for external access
+        self.last_cim_weight_write_cycles = profiler_weight_write_cycles_total
+        self.last_cim_weight_write_bytes = profiler_weight_write_bytes_total
+
+        return total_cycle_count
 
     class L2TileSimulator:
         def __init__(
@@ -1345,7 +1639,10 @@ class Matmul(Operator):
 
             total_cycle_count = 0
             total_l2_to_l1_read_bytes = 0  #add
+            total_l2_to_l1_weight_read_bytes = 0  #add
+            total_l2_to_l1_activation_read_bytes = 0  #add
             total_l1_to_l2_write_bytes = 0  #add
+            total_l1_to_l2_activation_write_bytes = 0  #add
             total_l2_to_l1_read_cycles = 0  #add
             total_l1_to_l2_write_cycles = 0  #add
             total_core_compute_cycles = 0  #add
@@ -1470,9 +1767,19 @@ class Matmul(Operator):
                     + current_batch_K_N_read_count * chiplet_module.compute_module.core.systolic_array.input_word_size  #add
                     + current_batch_M_N_read_count * chiplet_module.compute_module.core.systolic_array.output_word_size  #add
                 )  #add
+                current_batch_weight_read_bytes_profile = (
+                    current_batch_K_N_read_count * chiplet_module.compute_module.core.systolic_array.input_word_size
+                )  #add
+                current_batch_activation_read_bytes_profile = (
+                    current_batch_M_K_read_count * chiplet_module.compute_module.core.systolic_array.input_word_size
+                    + current_batch_M_N_read_count * chiplet_module.compute_module.core.systolic_array.output_word_size
+                )  #add
                 previous_batch_write_bytes_profile = previous_batch_M_N_write_count * chiplet_module.compute_module.core.systolic_array.output_word_size  #add
                 total_l2_to_l1_read_bytes += int(current_batch_read_bytes_profile)  #add
+                total_l2_to_l1_weight_read_bytes += int(current_batch_weight_read_bytes_profile)  #add
+                total_l2_to_l1_activation_read_bytes += int(current_batch_activation_read_bytes_profile)  #add
                 total_l1_to_l2_write_bytes += int(previous_batch_write_bytes_profile)  #add
+                total_l1_to_l2_activation_write_bytes += int(previous_batch_write_bytes_profile)  #add
                 total_l2_to_l1_read_cycles += current_batch_read_cycle_count  #add
                 total_l1_to_l2_write_cycles += prvious_batch_write_cycle_count  #add
                 total_core_compute_cycles += previous_batch_compute_cycle_count  #add
@@ -1505,7 +1812,10 @@ class Matmul(Operator):
             total_l1_to_l2_write_cycles += last_batch_write_cycles_profile  #add
             total_core_compute_cycles += previous_batch_compute_cycle_count  #add
             self.l2_to_l1_read_bytes = total_l2_to_l1_read_bytes  #add
+            self.weight_l2_to_l1_read_bytes = total_l2_to_l1_weight_read_bytes  #add
+            self.activation_l2_to_l1_read_bytes = total_l2_to_l1_activation_read_bytes  #add
             self.l1_to_l2_write_bytes = total_l1_to_l2_write_bytes  #add
+            self.l1_to_l2_activation_write_bytes = total_l1_to_l2_activation_write_bytes  #add
             self.l2_to_l1_read_cycle_count = total_l2_to_l1_read_cycles  #add
             self.l1_to_l2_write_cycle_count = total_l1_to_l2_write_cycles  #add
             self.core_compute_cycle_count = total_core_compute_cycles  #add

@@ -1,4 +1,6 @@
 import json, re
+import time
+import sys
 from hardware_model.compute_module import (
     VectorUnit,
     SystolicArray,
@@ -133,11 +135,51 @@ def find_cheapest_design(
     auto_regression_latency,
     
 ):
-    i=0
-    smallest_total_area_mm2=float('inf')
-    best_arch_specs=None
+    # Search space parameters
+    device_count_list = [4, 8, 12, 16]
+    link_count_list = [6, 12, 18, 24]
+    core_count_list = [32, 64, 128, 256]
+    sublane_count_list = [1, 2, 4, 8]
+    array_height_list = [16, 32, 64, 128]
+    vector_width_list = [16, 32, 64, 128]
+    SRAM_KB_list = [64, 128, 256, 512, 1024]
+    global_buffer_list = [80, 160, 240, 320, 400, 480, 640, 800, 960]
+    memory_protocol_list = ["HBM2e", "DDR5", "PCIe5"]
+
+    # Calculate total search space size (upper bound, some combos will be skipped)
+    total_combos = (
+        len(device_count_list)
+        * len(link_count_list)
+        * len(core_count_list)
+        * len(sublane_count_list)
+        * len(array_height_list)
+        * len(vector_width_list)
+        * len(SRAM_KB_list)
+        * len(global_buffer_list)
+        * len(memory_protocol_list)
+        * 3  # max channel_count_list length (DDR5 and PCIe5 have 3)
+    )
+
+    start_time = time.time()
+    i = 0
+    total_evaluated = 0
+    smallest_total_area_mm2 = float('inf')
+    best_arch_specs = None
     arch_specs = read_architecture_template("configs/template.json")
-    for device_count in [4, 8, 12, 16]:
+
+    # print("=" * 70)
+    # print("Starting Design Space Exploration (heuristic-CIM DSE)")
+    # print("=" * 70)
+    # print(f"  Total upper bound combinations: {total_combos:,}")
+    # print(f"  Constraints: init_latency<={init_latency}s, ar_latency<={auto_regression_latency}s")
+    # print(f"  Model: d_model={d_model}, n_heads={n_heads}, n_layers={n_layers}")
+    # print(f"  Batch size: {batch_size}, Input seq: {input_seq_length}, Output seq: {output_seq_length}")
+    # print("=" * 70)
+    sys.stdout.flush()
+
+    for di, device_count in enumerate(device_count_list):
+        dc_start_time = time.time()
+        # print(f"\n[{di+1}/{len(device_count_list)}] device_count={device_count}")
         model_init = TransformerBlockInitComputationTP(
                 d_model=12288,
                 n_heads=96,
@@ -210,17 +252,13 @@ def find_cheapest_design(
                                     ] = global_buffer_bandwidth_per_cycle_byte
                                     # memory
                                     memory_capacity_requirement_GB = ceil(model_auto_regression.memory_requirement*n_layers/1e9/16)*16
-                                    # print(f"memory_capacity_requirement_GB={model_auto_regression.memory_requirement*n_layers/1e9}")
-                                    # exit()
                                     for memory_protocol in [
                                         "HBM2e",
                                         "DDR5",
                                         "PCIe5",
-                                        # "GDDR6X"
                                     ]:
                                         arch_specs['device']['memory_protocol']=memory_protocol
                                         if memory_protocol == "HBM2e":
-                                            # 400 GB/s per channel, 16 GB
                                             channel_count=memory_capacity_requirement_GB // 16
                                             if channel_count>8:
                                                 continue
@@ -228,19 +266,25 @@ def find_cheapest_design(
                                             pin_count_per_channel=1024
                                             bandwidth_per_pin_bit=3.2e9
                                         elif memory_protocol == "DDR5":
-                                            # 19.2 GB/s per channel, 2 channel per dimm
                                             channel_count_list = [16, 24, 32]
                                             pin_count_per_channel=32
                                             bandwidth_per_pin_bit=4.8e9
                                         elif memory_protocol == "PCIe5":
-                                            # 4 GB/s per channel
                                             channel_count_list = [64, 96, 128]
                                             pin_count_per_channel=1
                                             bandwidth_per_pin_bit=32e9
-                                        # elif memory_protocol == "GDDR6X":
-                                        #     # 84 GB/s per channel, 2 GB
-                                        #     channel_count_list= memo
                                         for channel_count in channel_count_list:
+                                            total_evaluated += 1
+                                            if total_evaluated % 10000 == 0:
+                                                elapsed = time.time() - start_time
+                                                rate = total_evaluated / elapsed if elapsed > 0 else 0
+                                                # print(f"  [Progress] evaluated={total_evaluated:,}/{total_combos:,} "
+                                                #       f"({100.0*total_evaluated/total_combos:.1f}%), "
+                                                #       f"valid={i}, elapsed={elapsed:.1f}s, "
+                                                #       f"rate={rate:.0f} combos/s, "
+                                                #       f"best_area={smallest_total_area_mm2:.1f} mm²*dev")
+                                                sys.stdout.flush()
+
                                             arch_specs['device']['memory']['total_capacity_GB'] = memory_capacity_requirement_GB
                                             arch_specs['device']['io']['memory_channel_active_count'] = channel_count
                                             arch_specs['device']['io']['memory_channel_physical_count'] = channel_count
@@ -248,7 +292,6 @@ def find_cheapest_design(
                                             arch_specs['device']['io']['bandwidth_per_pin_bit'] = bandwidth_per_pin_bit
                                             
                                             total_area_mm2=calc_compute_chiplet_area_mm2(arch_specs)+calc_io_die_area_mm2(arch_specs)
-                                            # print(f"channel_count={arch_specs['device']['io']['memory_channel_active_count']},total area={total_area_mm2}")
                                             if total_area_mm2>900:
                                                 continue
                                             system=template_to_system(arch_specs)
@@ -266,15 +309,36 @@ def find_cheapest_design(
                                             if init_latency_simulated>init_latency:
                                                 continue
                                             if total_area_mm2*device_count<smallest_total_area_mm2:
+                                                old_best = smallest_total_area_mm2
                                                 smallest_total_area_mm2=total_area_mm2*device_count
                                                 best_arch_specs=arch_specs
                                                 best_arch_specs['area_per_device_mm2']=total_area_mm2
-                                                # print(f"best_arch_specs={best_arch_specs}")
-                                                # print(f"smallest_total_area_mm2={smallest_total_area_mm2}")
+                                                # print(f"  *** New best! area={smallest_total_area_mm2:.2f} mm²*dev "
+                                                #       f"(was {old_best:.2f}), device_count={device_count}, "
+                                                #       f"core_count={core_count}, array={array_height}x{array_height}, "
+                                                #       f"mem={memory_protocol}, channel={channel_count}")
+                                                sys.stdout.flush()
                                             i=i+1
-                                            if i%100==0:
-                                                print(f'i={i}')
-    print(f'number of potential designs={i}')
+        dc_elapsed = time.time() - dc_start_time
+        total_elapsed = time.time() - start_time
+        # print(f"  => device_count={device_count} done in {dc_elapsed:.1f}s, "
+        #       f"valid designs so far={i}, best_area={smallest_total_area_mm2:.1f} mm²*dev, "
+        #       f"total elapsed={total_elapsed:.1f}s")
+        sys.stdout.flush()
+
+    total_elapsed = time.time() - start_time
+    # print("\n" + "=" * 70)
+    # print("DSE Complete!")
+    # print("=" * 70)
+    # print(f"  Total combinations evaluated: {total_evaluated:,}")
+    # print(f"  Valid designs found: {i}")
+    # print(f"  Total time: {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)")
+    # if best_arch_specs is not None:
+    #     print(f"  Best total area: {smallest_total_area_mm2:.2f} mm² * device_count")
+    #     print(f"  Area per device: {best_arch_specs.get('area_per_device_mm2', 'N/A'):.2f} mm²")
+    # else:
+    #     print("  No valid design found!")
+    # print("=" * 70)
     with open("configs/best_arch_specs.json", "w") as f:
         json.dump(best_arch_specs, f, indent=4)
                                             

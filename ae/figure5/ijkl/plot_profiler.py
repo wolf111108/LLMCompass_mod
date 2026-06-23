@@ -50,7 +50,7 @@ OPS = [
     ("Softmax", "Softmax", 1, "Softmax"),  #add
     ("LN-MHA", "LayerNorm_MHA", 1, "LayerNorm_MHA"),  #add
     ("LN-FFN", "LayerNorm_FFN", 1, "LayerNorm_FFN"),  #add
-    #("GeLU", "GeLU", 1, "GeLU"),  #add
+    ("GeLU", "GeLU", 1, "GeLU"),  #add
     ("Activation", ["Activation", "GeLU", "ReLU"], 1, "Activation"),  # add
 ]
 
@@ -365,6 +365,24 @@ def main():
             "json_filename": "transformer_A100_opt_sim_profiler.json",
             "csv_filename": "transformer_A100_opt_sim.csv",
             "latency_filename": "profiler_latency_prefill_opt.pdf",
+            "latency_ylabel": "Latency (ms)",
+            "latency_scale": 1e3,
+        },
+            {
+            "mode": "decode_llama",
+            "title": "Decode A100 LLAMA",
+            "json_filename": "transformerAR_A100_llama_sim_profiler.json",
+            "csv_filename": "transformerAR_A100_llama_sim.csv",
+            "latency_filename": "profiler_latency_decode_llama.pdf",
+            "latency_ylabel": "Latency (ms)",
+            "latency_scale": 1e3,
+        },
+                {
+            "mode": "prefill_llama",
+            "title": "Prefill A100 LLAMA",
+            "json_filename": "transformer_A100_llama_sim_profiler.json",
+            "csv_filename": "transformer_A100_llama_sim.csv",
+            "latency_filename": "profiler_latency_prefill_llama.pdf",
             "latency_ylabel": "Latency (ms)",
             "latency_scale": 1e3,
         },

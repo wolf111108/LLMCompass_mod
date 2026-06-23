@@ -22,6 +22,8 @@ class MappingProfiler:
             # L2 / global buffer <-> L1 / local buffer
             "l2_to_l1_latency_cycles": 0,
             "l2_to_l1_bytes": {"read": 0, "write": 0},
+            "l2_to_l1_bytes_weight": {"read": 0, "write": 0},
+            "l2_to_l1_bytes_activation": {"read": 0, "write": 0},
 
             # L1/local buffer 内部供给 core 后的计算时间
             # 注意：这里不是 L1->core 传输 latency，而是 core compute latency
@@ -41,6 +43,14 @@ class MappingProfiler:
     def record_l2_l1_bytes(self, read_bytes: int, write_bytes: int):
         self.current_record["l2_to_l1_bytes"]["read"] = int(read_bytes)
         self.current_record["l2_to_l1_bytes"]["write"] = int(write_bytes)
+
+    def record_l2_l1_weight_bytes(self, read_bytes: int, write_bytes: int):
+        self.current_record["l2_to_l1_bytes_weight"]["read"] = int(read_bytes)
+        self.current_record["l2_to_l1_bytes_weight"]["write"] = int(write_bytes)
+
+    def record_l2_l1_activation_bytes(self, read_bytes: int, write_bytes: int):
+        self.current_record["l2_to_l1_bytes_activation"]["read"] = int(read_bytes)
+        self.current_record["l2_to_l1_bytes_activation"]["write"] = int(write_bytes)
 
     def record_dram_latency(self, cycle_count: float):
         self.current_record["dram_latency_cycles"] = cycle_count
@@ -85,6 +95,8 @@ class MappingProfiler:
             "dram_bytes": self.best_record["dram_bytes"],
             "dram_latency_cycles": self.best_record["dram_latency_cycles"],
             "l2_to_l1_bytes": self.best_record["l2_to_l1_bytes"],
+            "l2_to_l1_bytes_weight": self.best_record["l2_to_l1_bytes_weight"],
+            "l2_to_l1_bytes_activation": self.best_record["l2_to_l1_bytes_activation"],
             "l2_to_l1_latency_cycles": self.best_record["l2_to_l1_latency_cycles"],
             "compute_latency_cycles": self.best_record["compute_latency_cycles"],
             "other_stats": self.best_record["other_stats"],

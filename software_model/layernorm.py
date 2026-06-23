@@ -98,8 +98,18 @@ class LayerNorm(Operator):
                 // (l1_tile_N * data_type.word_size)
                 // 2
             )
-            while l1_tile_M < pcb_module.compute_module.core.vector_unit.vector_count:
+            while (
+                l1_tile_M < pcb_module.compute_module.core.vector_unit.vector_count
+                and l1_tile_N > 1
+            ):
                 l1_tile_N = l1_tile_N // 2
+                l1_tile_M = (
+                    pcb_module.compute_module.core.SRAM_size
+                    // (l1_tile_N * data_type.word_size)
+                    // 2
+                )
+            if l1_tile_N == 0:
+                l1_tile_N = 1
                 l1_tile_M = (
                     pcb_module.compute_module.core.SRAM_size
                     // (l1_tile_N * data_type.word_size)
@@ -112,6 +122,10 @@ class LayerNorm(Operator):
                 2 * l1_tile_N * data_type.word_size
             )
             l1_tile_M = min(l1_tile_M, M)
+        elif compile_mode == "heuristic-CIM":
+            # CIM has no L1 SRAM, vector ops work directly from L2
+            l1_tile_N = N
+            l1_tile_M = l2_tile_M  # No L1 tiling: l1 = l2
         mapping = self.Mapping(
             l2_tile_M,
             l2_tile_N,
@@ -193,6 +207,8 @@ class LayerNorm(Operator):
         self.profiler.record_dram_bytes(profiler_dram_read_bytes, profiler_dram_write_bytes) #add
         self.profiler.record_l2_to_l1_latency(profiler_l2_to_l1_read_cycles + profiler_l1_to_l2_write_cycles) #add
         self.profiler.record_l2_l1_bytes(profiler_l2_to_l1_read_bytes, profiler_l1_to_l2_write_bytes) #add
+        self.profiler.record_l2_l1_weight_bytes(0, 0) #add
+        self.profiler.record_l2_l1_activation_bytes(profiler_l2_to_l1_read_bytes, profiler_l1_to_l2_write_bytes) #add
         self.profiler.record_compute_latency(profiler_compute_cycles) #add
         self.profiler.record_other_stat("dram_read_cycles", profiler_dram_read_cycles) #add
         self.profiler.record_other_stat("dram_write_cycles", profiler_dram_write_cycles) #add

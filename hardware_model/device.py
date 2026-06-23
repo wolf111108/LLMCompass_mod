@@ -9,10 +9,12 @@ class Device:
         compute_module: ComputeModule,
         io_module: IOModule,
         memory_module: MemoryModule,
+        wu_io_module: IOModule = None,
     ) -> None:
         self.compute_module = compute_module
         self.io_module = io_module
         self.memory_module = memory_module
+        self.wu_io_module = wu_io_module
 
 
 device_dict = {
