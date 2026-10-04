@@ -131,225 +131,16 @@ def build_profiler_ops(model):
     return ops
 
 
-def print_matmul_profiler_stats(model, system=None, n_layers=1, output_token_length=1):
-    """只打印Matmul操作的关键CIM统计信息。"""
-    matmul_ops = build_profiler_ops(model)
+def collect_matmul_profiler_stats(model, system=None, n_layers=1, output_token_length=1, *, phase):
+    """GEMM-only metrics from profiler records, excluding wrapper overheads.
 
-    # 获取CIM硬件参数（用于计算weight写入byte）
-    array_width = None
-    clock_freq = None
-    if system is not None:
-        try:
-            array_width = system.device.compute_module.core.cim_macro.array_width
-        except AttributeError:
-            pass
-        try:
-            clock_freq = system.device.compute_module.clock_freq
-        except AttributeError:
-            pass
-
-    print("\n" + "=" * 80)
-    print("Matmul操作统计 (仅Matmul)")
-    print("=" * 80)
-
-    total_latency_all = 0
-    total_compute_all = 0
-    total_dram_all = 0
-    total_flop_all = 0
-    total_weight_write_bytes_all = 0
-    total_kv_cache_access_bytes_all = 0
-
-    for name, (op, output_scale) in matmul_ops.items():
-        if name not in MATMUL_OP_NAMES:
-            continue  # 跳过非Matmul操作
-
-        if getattr(op, "profiler", None) is None:
-            continue
-        record = op.profiler.get_best_record()
-        if record is None:
-            continue
-
-        is_kv_cache_op = name in KV_CACHE_OP_NAMES
-
-        mapping = record["mapping"]
-        profiler_scale = getattr(op, "profiler_scale", 1)
-        effective_scale = output_scale * profiler_scale
-        extra_latency_cycles = getattr(op, "profiler_extra_latency_cycles", 0) * output_scale
-        extra_dram_write_bytes = getattr(op, "profiler_extra_dram_write_bytes", 0) * output_scale
-
-        effective_total_latency = record["total_latency"] * effective_scale + extra_latency_cycles
-        effective_compute_latency = record["compute_latency_cycles"] * effective_scale
-        effective_dram_latency = record["dram_latency_cycles"] * effective_scale + extra_latency_cycles
-        compute_ratio = effective_compute_latency / effective_total_latency * 100 if effective_total_latency > 0 else 0
-
-        layer_shape = op.profiler.layer_shape
-        M = layer_shape.get("M", 0)
-        N = layer_shape.get("N", 0)
-        K = layer_shape.get("K", 0)
-
-        # CIM weight写入byte: directly from simulate_cim profiler
-        weight_write_cycles_raw = record["other_stats"].get("weight_write_cycles", 0)
-        weight_write_bytes_raw = record["other_stats"].get("weight_write_bytes", 0)
-        weight_write_bytes = weight_write_bytes_raw * effective_scale
-
-        # Weight重写次数: knm loop order下，weight在M维度复用，只在(k,n)变化时重写
-        # 总次数 = num_K_tiles * num_N_tiles * effective_scale
-        if mapping is not None:
-            num_K_tiles = ceil(K / mapping.l2_tile_K) if mapping.l2_tile_K > 0 else 1
-            num_M_tiles = ceil(M / mapping.l2_tile_M) if mapping.l2_tile_M > 0 else 1
-            num_N_tiles = ceil(N / mapping.l2_tile_N) if mapping.l2_tile_N > 0 else 1
-            weight_write_count_raw = num_K_tiles * num_N_tiles
-            if mapping.l2_loop_order == "mnk":
-                weight_write_count_raw *= num_M_tiles
-        else:
-            weight_write_count_raw = 0
-        weight_write_count = weight_write_count_raw * effective_scale
-
-        # Activation往返次数: activation_read的总byte / 单次完整activation的byte
-        dram_read_raw = record["dram_bytes"]["read"]
-        dram_write_raw = record["dram_bytes"]["write"]
-        effective_dram_read = dram_read_raw * effective_scale
-        effective_dram_write = dram_write_raw * effective_scale + extra_dram_write_bytes
-
-        # 单次完整input activation: M*K*word_size, 单次完整output activation: M*N*word_size
-        core = system.device.compute_module.core
-        word_size = core.systolic_array.input_word_size if getattr(core, 'systolic_array', None) is not None else core.cim_macro.input_word_size
-        single_input_act_bytes = M * K * word_size if M > 0 and K > 0 else 1
-        single_output_act_bytes = M * N * word_size if M > 0 and N > 0 else 1
-        act_read_trips = effective_dram_read / single_input_act_bytes
-        act_write_trips = effective_dram_write / single_output_act_bytes
-
-        # 并行化因子
-        other_stats = record["other_stats"]
-        activation_cache_stats = {
-            "activation_cache_capacity_bytes": other_stats.get(
-                "activation_cache_capacity_bytes",
-                None,
-            ),
-            "activation_cache_hits": other_stats.get(
-                "activation_cache_hits",
-                None,
-            ),
-            "activation_cache_misses": other_stats.get(
-                "activation_cache_misses",
-                None,
-            ),
-            "activation_cache_evictions": other_stats.get(
-                "activation_cache_evictions",
-                None,
-            ),
-        }
-        K_factor = other_stats.get("K_factor", 1)
-        M_factor = other_stats.get("M_factor", 1)
-        N_factor = other_stats.get("N_factor", 1)
-
-        print(f"\n----- {name} -----")
-        print(f"  Shape: M={M}, N={N}, K={K}")
-        print(f"  策略: {getattr(op, 'profiler_strategy', 'N/A')}, effective_scale={effective_scale}")
-        if is_kv_cache_op:
-            print(f"  KV cache访问: {format_bytes(weight_write_bytes)} (raw: {format_bytes(weight_write_bytes_raw)}, cycles={weight_write_cycles_raw})")
-        else:
-            print(f"  Weight写入: {format_bytes(weight_write_bytes)} (raw: {format_bytes(weight_write_bytes_raw)}, cycles={weight_write_cycles_raw})")
-        print(f"  重写次数: {weight_write_count:.0f} (raw: {weight_write_count_raw}, per complete weight: {1.0 * weight_write_count})")
-        print(f"  Activation读取次数: {act_read_trips:.2f}x (input act), 写出次数: {act_write_trips:.2f}x (output act)")
-        print(f"  DRAM read: {format_bytes(effective_dram_read)}, write: {format_bytes(effective_dram_write)}")
-        print(f"  Mapping: K_factor={K_factor}, M_factor={M_factor}, N_factor={N_factor}")
-        if mapping is not None:
-            print(f"  Tile分割: L2=({mapping.l2_tile_M}, {mapping.l2_tile_N}, {mapping.l2_tile_K}), "
-                  f"L1=({mapping.l1_tile_M}, {mapping.l1_tile_N}, {mapping.l1_tile_K}), "
-                  f"loop={mapping.l2_loop_order}, double_buf={mapping.is_l2_double_buffering}")
-        # FLOP count and TOPS
-        op_flop = getattr(op, "flop_count", 0) * output_scale
-        tops = 0.0
-        if clock_freq and effective_total_latency > 0 and op_flop > 0:
-            time_seconds = effective_total_latency / clock_freq
-            tops = op_flop / time_seconds / 1e12
-
-        print(f"  Latency (pipeline后): total={effective_total_latency:.0f} cycles, "
-              f"compute={effective_compute_latency:.0f} cycles, "
-              f"dram={effective_dram_latency:.0f} cycles")
-        print(f"    compute占比={compute_ratio:.1f}% (compute/raw sum, pipeline中compute与DRAM read重叠)")
-        if clock_freq and op_flop > 0:
-            print(f"  TOPS: {tops:.2f} TOPS (flop={op_flop/1e9:.2f} GFLOP, "
-                  f"latency={effective_total_latency/clock_freq*1e6:.2f} us, "
-                  f"freq={clock_freq/1e9:.2f} GHz)")
-
-        total_latency_all += effective_total_latency
-        total_compute_all += effective_compute_latency
-        total_dram_all += effective_dram_latency
-        total_flop_all += op_flop
-        if is_kv_cache_op:
-            total_kv_cache_access_bytes_all += weight_write_bytes
-        else:
-            total_weight_write_bytes_all += weight_write_bytes
-
-    print(f"\n{'=' * 80}")
-    overall_compute_ratio = total_compute_all / total_latency_all * 100 if total_latency_all > 0 else 0
-    overall_tops = 0.0
-    if clock_freq and total_latency_all > 0 and total_flop_all > 0:
-        overall_time_seconds = total_latency_all / clock_freq
-        overall_tops = total_flop_all / overall_time_seconds / 1e12
-    print(f"所有Matmul总计: latency={total_latency_all:.0f} cycles, "
-          f"compute={total_compute_all:.0f} cycles, "
-          f"dram={total_dram_all:.0f} cycles, "
-          f"compute占比={overall_compute_ratio:.1f}%")
-    print(f"所有Matmul总计: TOPS={overall_tops:.2f} TOPS (总FLOP={total_flop_all/1e9:.2f} GFLOP, "
-          f"总延迟={total_latency_all/clock_freq*1e6:.2f} us)" if clock_freq else "所有Matmul总计: TOPS=N/A (无clock_freq)")
-    print(f"所有Matmul总计: weight_write_bytes={format_bytes(total_weight_write_bytes_all)}")
-    print(f"所有Matmul总计: kv_cache_access_bytes={format_bytes(total_kv_cache_access_bytes_all)}")
-
-    # ========== 完整模型 decode 汇总 ==========
-    if n_layers > 1 or output_token_length > 1:
-        full_model_total_tokens = n_layers * output_token_length
-        full_latency = total_latency_all * full_model_total_tokens
-        full_flop = total_flop_all * full_model_total_tokens
-        full_weight_write = total_weight_write_bytes_all * full_model_total_tokens
-        full_kv_cache_access = total_kv_cache_access_bytes_all * full_model_total_tokens
-        full_dram_read = 0
-        full_dram_write = 0
-        # 重新遍历一次收集dram
-        for _name2, (_op2, _os2) in matmul_ops.items():
-            if _name2 not in MATMUL_OP_NAMES:
-                continue
-            if getattr(_op2, "profiler", None) is None:
-                continue
-            _rec2 = _op2.profiler.get_best_record()
-            if _rec2 is None:
-                continue
-            _ps2 = getattr(_op2, "profiler_scale", 1)
-            _es2 = _os2 * _ps2
-            _extra_dw = getattr(_op2, "profiler_extra_dram_write_bytes", 0) * _os2
-            full_dram_read += _rec2["dram_bytes"]["read"] * _es2
-            full_dram_write += _rec2["dram_bytes"]["write"] * _es2 + _extra_dw
-        full_dram_read *= full_model_total_tokens
-        full_dram_write *= full_model_total_tokens
-
-        full_tops = 0.0
-        if clock_freq and full_latency > 0 and full_flop > 0:
-            full_tops = full_flop / (full_latency / clock_freq) / 1e12
-
-        mode_label = "Prefill" if output_token_length <= 1 else "Decode"
-        print(f"\n{'=' * 80}")
-        print(f"完整模型 {mode_label} 汇总 (n_layers={n_layers}, output_token_length={output_token_length}, "
-              f"总layer步数={full_model_total_tokens})")
-        print(f"  总延迟: {full_latency:.0f} cycles ({full_latency/clock_freq*1e6:.2f} us, "
-              f"{full_latency/clock_freq*1e3:.4f} ms)" if clock_freq else
-              f"  总延迟: {full_latency:.0f} cycles")
-        print(f"  总FLOP: {full_flop/1e9:.2f} GFLOP ({full_flop/1e12:.4f} TFLOP)")
-        print(f"  总TOPS: {full_tops:.2f} TOPS" if clock_freq else "  总TOPS: N/A")
-        print(f"  总 Weight写入: {format_bytes(full_weight_write)}")
-        print(f"  总 KV cache访问: {format_bytes(full_kv_cache_access)}")
-        print(f"  总 DRAM read: {format_bytes(full_dram_read)}")
-        print(f"  总 DRAM write: {format_bytes(full_dram_write)}")
-        if output_token_length <= 1:
-            print(f"  注意: Prefill阶段, 单层统计 × n_layers")
-        else:
-            print(f"  注意: 此汇总假设所有decode步骤的KV cache长度相同(近似)")
-        print("=" * 80)
-
-
-def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output_token_length=1):
-    """只dump Matmul操作的关键统计信息到JSON。"""
+    phase is explicit: generating one token is still decode. Multi-token
+    decode totals assume a fixed context; TPOT is always a single step.
+    """
+    if phase not in ("prefill", "decode"):
+        raise ValueError("phase must be prefill or decode")
+    if n_layers <= 0 or output_token_length <= 0:
+        raise ValueError("n_layers and output_token_length must be positive")
     matmul_ops = build_profiler_ops(model)
     output_data = {}
     core_count = None
@@ -394,14 +185,11 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
         effective_dram_latency = record["dram_latency_cycles"] * effective_scale + extra_latency_cycles
         compute_ratio = effective_compute_latency / effective_total_latency if effective_total_latency > 0 else 0
 
-        is_kv_cache_op = name in KV_CACHE_OP_NAMES
+        is_kv_cache_op = phase == "decode" and name in KV_CACHE_OP_NAMES
 
         # CIM weight写入byte (KV cache op时实为KV cache访问)
         weight_write_cycles_raw = record["other_stats"].get("weight_write_cycles", 0)
         weight_write_bytes_raw = record["other_stats"].get("weight_write_bytes", 0)
-        if weight_write_bytes_raw == 0 and array_width:
-            # fallback for older records
-            weight_write_bytes_raw = weight_write_cycles_raw * array_width
         weight_write_bytes = weight_write_bytes_raw * effective_scale
 
         # Weight重写次数: knm loop order下，weight在M维度复用
@@ -414,15 +202,25 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
                 weight_write_count_raw *= num_M_tiles_d
         else:
             weight_write_count_raw = 0
+        weight_write_count_raw = record["other_stats"].get("weight_update_count", weight_write_count_raw)
         weight_write_count = weight_write_count_raw * effective_scale
 
         # Activation往返次数
         effective_dram_read = record["dram_bytes"]["read"] * effective_scale
         effective_dram_write = record["dram_bytes"]["write"] * effective_scale + extra_dram_write_bytes
-        core = system.device.compute_module.core
-        word_size = core.systolic_array.input_word_size if getattr(core, 'systolic_array', None) is not None else core.cim_macro.input_word_size
-        single_input_act_bytes = M * K * word_size if M > 0 and K > 0 else 1
-        single_output_act_bytes = M * N * word_size if M > 0 and N > 0 else 1
+        other_stats = record["other_stats"]
+        # The denominator uses the same serialized batch/group scale as traffic.
+        macro = getattr(system.device.compute_module.core, "cim_macro", None) if system else None
+        act_ws = other_stats.get("activation_storage_bits", 0) / 8.0
+        if not act_ws:
+            act_ws = getattr(macro, "prefill_activation_element_size", 1.0)
+        single_input_act_bytes = M * K * act_ws * effective_scale
+        hbm_activation = other_stats.get("hbm_activation_read_bytes")
+        hbm_output = other_stats.get("hbm_output_write_bytes")
+        output_ws = getattr(getattr(op, "data_type", None), "word_size", 1)
+        single_output_act_bytes = M * N * output_ws * effective_scale
+        local_weight_bytes = other_stats.get("local_replicated_weight_write_bytes",
+                                            other_stats.get("local_weight_write_bytes"))
 
         flop_count = None
         if hasattr(op, "flop_count"):
@@ -469,8 +267,24 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
             "weight_write_count_raw": weight_write_count_raw,
             **activation_cache_stats,
             # Activation往返
-            "activation_read_trips": round(effective_dram_read / single_input_act_bytes, 4),
-            "activation_write_trips": round(effective_dram_write / single_output_act_bytes, 4),
+            "activation_read_trips": (round(hbm_activation * effective_scale / single_input_act_bytes, 4)
+                                      if hbm_activation is not None and single_input_act_bytes else None),
+            "activation_write_trips": (round(hbm_output * effective_scale / single_output_act_bytes, 4)
+                                       if hbm_output is not None and single_output_act_bytes else None),
+            "hbm_weight_read_bytes": (int(weight_write_bytes)
+                                      if "weight_write_bytes" in other_stats else None),
+            "cim_weight_write_bytes": (int(local_weight_bytes * effective_scale)
+                                       if local_weight_bytes is not None else None),
+            "weight_write_bytes_semantics": "legacy alias of hbm_weight_read_bytes",
+            "hbm_activation_read_bytes": (int(hbm_activation * effective_scale)
+                                          if hbm_activation is not None else None),
+            "simulation_parameters": {key: other_stats[key] for key in (
+                "mapping_mode", "prefill_effective_speedup", "decode_effective_speedup",
+                "activation_storage_bits", "activation_serial_bits", "effective_throughput_per_macro",
+                "reduction_model") if key in other_stats},
+            "traffic_bytes": {key: value * effective_scale
+                              for key, value in other_stats.items()
+                              if key.endswith("_bytes") and isinstance(value, (int, float))},
             "dram_read_bytes": int(effective_dram_read),
             "dram_write_bytes": int(effective_dram_write),
             # Mapping方式
@@ -492,6 +306,7 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
             "tops": tops,
         }
 
+    total_cim_weight_write = sum(d.get("cim_weight_write_bytes", 0) or 0 for d in output_data.values())
     # Add overall TOPS summary
     total_flops = sum(
         d.get("flop_count", 0) or 0 for d in output_data.values()
@@ -513,6 +328,8 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
     if clock_freq and total_latency > 0 and total_flops > 0:
         overall_tops = round(total_flops / (total_latency / clock_freq) / 1e12, 4)
     output_data["_overall"] = {
+        "metric_scope": "GEMM-only",
+        "total_cim_weight_write_bytes": total_cim_weight_write,
         "total_flop_count": total_flops,
         "total_flop_count_GFLOP": round(total_flops / 1e9, 4),
         "total_latency_cycles": total_latency,
@@ -526,7 +343,7 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
     }
 
     # ========== 完整模型 decode 汇总 ==========
-    full_model_total_tokens = n_layers * output_token_length
+    full_model_total_tokens = n_layers * (output_token_length if phase == "decode" else 1)
     full_latency = total_latency * full_model_total_tokens
     full_flops = total_flops * full_model_total_tokens
     full_weight_write = total_weight_write_bytes * full_model_total_tokens
@@ -545,14 +362,18 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
     if clock_freq and full_latency > 0 and full_flops > 0:
         full_tops = round(full_flops / (full_latency / clock_freq) / 1e12, 4)
 
-    mode_label = "Prefill" if output_token_length <= 1 else "Decode"
+    mode_label = phase.capitalize()
     output_data["_full_model_summary"] = {
         "mode": mode_label,
+        "total_cim_weight_write_bytes": total_cim_weight_write * full_model_total_tokens,
         "n_layers": n_layers,
         "output_token_length": output_token_length,
         "total_tokens_times_layers": full_model_total_tokens,
-        "note": ("单层统计 × n_layers" if output_token_length <= 1
-                 else "假设所有decode步骤的KV cache长度相同(近似, 使用最后一步的seq_len)"),
+        "metric_scope": "GEMM-only",
+        "gemm_tpot_ms": (total_latency * n_layers / clock_freq * 1e3
+                         if phase == "decode" and clock_freq else None),
+        "note": ("单层 GEMM 统计 × n_layers" if phase == "prefill"
+                 else "TPOT 是当前 KV 长度下的一步；多 token 总量使用固定 KV 长度近似"),
         "total_latency_cycles": full_latency,
         "total_latency_us": round(full_latency / clock_freq * 1e6, 4) if clock_freq else None,
         "total_latency_ms": round(full_latency / clock_freq * 1e3, 4) if clock_freq else None,
@@ -570,9 +391,53 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
         "total_dram_write_bytes_human": format_bytes(full_dram_write),
     }
 
+    output_data["_metadata"] = {
+        "schema_version": 2,
+        "phase": phase,
+        "metric_scope": "GEMM-only",
+        "includes": "profiled GEMM compute and data movement",
+        "excludes": "softmax, normalization, activation, fixed launch overhead, LM head, sampling",
+        "missing_gemm_records": [name for name, data in output_data.items()
+                                 if name in MATMUL_OP_NAMES and data.get("record", True) is None],
+    }
+    missing = output_data["_metadata"]["missing_gemm_records"]
+    output_data["_metadata"]["complete_block_gemm"] = not missing
+    if missing:
+        output_data["_full_model_summary"]["gemm_tpot_ms"] = None
+        output_data["_full_model_summary"]["metric_scope"] = "partial GEMM-only"
+    if system is not None:
+        compute = system.device.compute_module
+        macro = getattr(compute.core, "cim_macro", None)
+        output_data["_metadata"]["hardware"] = {
+            "core_count": compute.core_count, "clock_freq_Hz": compute.clock_freq,
+            "global_buffer_bytes": compute.l2_size,
+            "global_buffer_bytes_per_cycle": compute.l2_bandwidth_per_cycle,
+            "hbm_bytes_per_second": system.device.io_module.bandwidth,
+            "macro": vars(macro) if macro else None,
+        }
+    return output_data
+
+
+def print_matmul_profiler_stats(model, system=None, n_layers=1, output_token_length=1, *, phase):
+    data = collect_matmul_profiler_stats(model, system, n_layers, output_token_length, phase=phase)
+    summary = data["_full_model_summary"]
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    # Keep autorun.sh's traffic parser compatible, using the same collected data.
+    print(f"  总 DRAM read: {summary['total_dram_read_bytes']} B")
+    print(f"  总 DRAM write: {summary['total_dram_write_bytes']} B")
+    return data
+
+
+def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output_token_length=1, *, phase):
+    data = collect_matmul_profiler_stats(model, system, n_layers, output_token_length, phase=phase)
+    if hasattr(model, "run_configuration"):
+        data["_metadata"]["run_configuration"] = model.run_configuration
     with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(output_data, f, indent=4, ensure_ascii=False, default=str)
-    print(f"Profiler stats written to {json_path}")
+        json.dump(data, f, indent=4, ensure_ascii=False, default=str)
+    print(f"GEMM-only profiler stats written to {json_path}")
+    return data
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--init", action="store_true", help="initial computation")
@@ -588,7 +453,7 @@ if __name__ == "__main__":
     parser.add_argument("--array_width", type=int, default=128, help="CIM macro array width")
     parser.add_argument("--Nbank", type=int, default=8, help="CIM macro number of banks")
     parser.add_argument("--core_count", type=int, default=16, help="Number of CIM cores")
-    parser.add_argument("--shared-kv", action="store_true", help="reuse one KV cache per GQA KV-head group")
+    parser.add_argument("--shared-kv", action=argparse.BooleanOptionalAction, default=True, help="reuse one KV cache per GQA KV-head group")
     parser.add_argument(
         "--activation-major-prefill",
         action="store_true",
@@ -601,7 +466,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--include-prefill-attention",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="also simulate prefill Q_mul_K and A_mul_V",
     )
     parser.add_argument(
@@ -1131,11 +997,9 @@ if __name__ == "__main__":
                 Tensor([bs, 1, 12288], data_type_dict["fp16"]), s + output_token_length
             )
             model.run_on_gpu()
+    # Retain legacy breakdown CSVs for plot_transformer.py. They are not TPOT.
     with open(f"ae/figure5/ijkl/{file_name}", "w") as f:
-        if args.roofline:
-            f.write(model.roofline_log)
-        else:
-            f.write(model.simluate_log)
+        f.write(model.roofline_log if args.roofline else model.simluate_log)
     if not args.roofline and (args.simgpu or args.simtpu or args.simcim):
         # 完整模型参数
         if args.opt:
@@ -1146,11 +1010,41 @@ if __name__ == "__main__":
             n_layers = 30  # BitNet-b1.58-2B-4T
         else:
             n_layers = 30  # 以OPT-1.3B为例，实际可以根据模型调整
+        model.run_configuration = vars(args).copy()
+        # Record the source revision; a working-tree run is explicitly marked.
+        import subprocess
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[3]
+        try:
+            model.run_configuration["source_commit"] = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True).strip()
+            model.run_configuration["source_dirty"] = bool(subprocess.check_output(
+                ["git", "diff", "--name-only", "HEAD"], cwd=repo_root, text=True).strip())
+        except (OSError, subprocess.CalledProcessError):
+            model.run_configuration["source_commit"] = None
         # decode: n_layers × output_token_length; prefill: n_layers × 1
         print_matmul_profiler_stats(model, current_system,
                                     n_layers=n_layers,
-                                    output_token_length=output_token_length if not args.init else 1)
+                                    output_token_length=output_token_length if not args.init else 1,
+                                    phase="prefill" if args.init else "decode")
         profiler_file_name = file_name.replace(".csv", "_profiler.json")
-        dump_matmul_profiler_stats(model, f"ae/figure5/ijkl/{profiler_file_name}", current_system,
+        report = dump_matmul_profiler_stats(model, f"ae/figure5/ijkl/{profiler_file_name}", current_system,
                                    n_layers=n_layers,
-                                   output_token_length=output_token_length if not args.init else 1)
+                                   output_token_length=output_token_length if not args.init else 1,
+                                    phase="prefill" if args.init else "decode")
+
+        # CSV and JSON share the same profiler-derived GEMM-only metric.
+        # model.latency remains the legacy wrapper metric for other callers.
+        import csv
+        summary = report["_full_model_summary"]
+        model.gemm_latency = report["_overall"]["total_latency_cycles"] / current_system.device.compute_module.clock_freq
+        gemm_csv = file_name.replace(".csv", "_gemm.csv")
+        with open(f"ae/figure5/ijkl/{gemm_csv}", "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["phase", "metric_scope", "n_layers", "output_token_length",
+                                                   "block_gemm_latency_ms", "total_gemm_latency_ms", "gemm_tpot_ms"])
+            writer.writeheader()
+            writer.writerow({"phase": report["_metadata"]["phase"], "metric_scope": summary["metric_scope"],
+                             "n_layers": n_layers, "output_token_length": output_token_length if not args.init else 1,
+                             "block_gemm_latency_ms": model.gemm_latency * 1e3,
+                             "total_gemm_latency_ms": summary["total_latency_ms"],
+                             "gemm_tpot_ms": summary["gemm_tpot_ms"]})

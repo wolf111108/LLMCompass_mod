@@ -68,9 +68,8 @@ class CIMMacro:
         self.Nbank = Nbank
         self.input_word_size = input_word_size
         self.output_word_size = output_word_size
-        # Weight buffer size in Bytes: Nbank * array_width * 1024 * input_word_size
-        # Each bank stores 1024 rows * array_width columns of input_word_size-byte elements
-        self.weight_buffer_size = Nbank * array_width * 64 * input_word_size
+        # Weight capacity uses the configured rows and element size.
+        self.weight_buffer_size = Nbank * array_width * array_height * input_word_size
         # Max compute throughput at sparsity=0: Nbank * array_width * 2 / input_word_size Ops/cycle
         self.max_throughput_per_cycle = Nbank * array_width * 2 / input_word_size / 2.4
 
@@ -316,9 +315,9 @@ def build_cim_compute_module(
     compute_mod.l2_bandwidth_per_cycle = l2_bandwidth_per_cycle
     compute_mod.total_vector_flops_per_cycle = vector_unit.total_vector_flops_per_cycle * core_count
     compute_mod.total_vector_flops = compute_mod.total_vector_flops_per_cycle * clock_freq
-    # For CIM: total throughput = core_count * max_throughput_per_cycle * 2 FLOP per OP * clock_freq
+    # max_throughput_per_cycle already counts multiply and add as two ops.
     compute_mod.total_systolic_array_flops = (
-        core_count * cim_macro.max_throughput_per_cycle * 2 * clock_freq
+        core_count * cim_macro.max_throughput_per_cycle * clock_freq
     )
     compute_mod.overhead = overhead_dict["CIM"]
     # Add CIM-specific attribute for identification

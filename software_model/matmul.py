@@ -68,7 +68,7 @@ class BatchedMatmul(Operator):
         _ = matmul_serialized(Tensor([self.M, self.K], self.data_type), Tensor([self.K, self.N], self.data_type))  # add
         # print(f"  BatchedMatmul {layer_name}: running serialized DSE...", flush=True)
         matmul_latency1 = (
-            matmul_serialized.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, layer_name+"serialized", sparsity_ratio=sparsity_ratio, att=True) * self.bs  # add
+            matmul_serialized.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, (layer_name or "matmul")+"serialized", sparsity_ratio=sparsity_ratio, att=True) * self.bs  # add
         )
         # print(f"  BatchedMatmul {layer_name}: serialized latency={matmul_latency1*1e3:.4f}ms", flush=True)
 
@@ -85,9 +85,11 @@ class BatchedMatmul(Operator):
             self.latency = matmul_latency1
             return self.latency
 
-        # Activation-major prefill also has a single strict physical mapping.
-        # Skip the unused repeated-operand "parallelized" alternative.
+        # CIM executes independent batch operands serially. Do not construct
+        # the unused K-concatenation alternative, which changes the GEMM.
         if compile_mode in (
+            "heuristic-CIM",
+            "heuristic-CIM-decode",
             "heuristic-CIM-activation-major",
             "heuristic-CIM-weight-major",
         ):
@@ -1539,12 +1541,17 @@ class Matmul(Operator):
                 cim_macro.array_width
             )
 
-            Kf, Mf, Nf, Kr, Mr, Nr = compute_optimal_macro_layout_decode(16, K, N, M)
+            Kf, Mf, Nf, Kr, Mr, Nr = compute_optimal_macro_layout_decode(
+                pcb_module.compute_module.core_count, K, N, M,
+                h=pcb_module.compute_module.core.cim_macro.array_height,
+                w=pcb_module.compute_module.core.cim_macro.array_width,
+                Nadder=pcb_module.compute_module.core.cim_macro.Nbank,
+            )
 
             # Conventional decode has one token/Q row.  Shared-KV GQA packs
             # the Q heads sharing one KV head into the M dimension, so one
             # K/V tile update is reused by all M rows.
-            tile_M = M if compile_mode == "heuristic-CIM-GQA-decode" else 1
+            tile_M = M  # All rows reuse the resident weight tile, including GQA.
 
             tile_K = min(
                 K,
@@ -1574,7 +1581,7 @@ class Matmul(Operator):
 
             resident_psum_bytes = (
                 M
-                * tile_N
+                * N
                 * psum_ws
             )
 
@@ -1652,9 +1659,7 @@ class Matmul(Operator):
                 activation_storage_bits=(
                     activation_storage_bits
                 ),
-                activation_serial_bits=(
-                    4
-                ),
+                activation_serial_bits=activation_serial_bits,
                 attn = att
             )
 
@@ -3430,8 +3435,8 @@ class Matmul(Operator):
             per_macro_physical_ops = (
                 2
                 * tokens_per_slowest_macro
-                * 48#physical_compute_N
-                * 1024#physical_compute_K
+                * physical_compute_N
+                * physical_compute_K
                 * 1
             )
 
@@ -3748,9 +3753,9 @@ class Matmul(Operator):
             [1, K] @ [K, N] -> [1, N]
 
         Macro mapping:
-            K_factor = 1
-            M_factor = 1
-            N_factor = active_macros
+            K_factor * N_factor <= core_count; M rows reuse each weight tile.
+            K shards receive disjoint activation slices, multicast along N.
+            Cross-shard partial sums accumulate through the Global Buffer.
 
         数据映射:
             - Global Buffer 中只保存一份 activation；
@@ -3783,7 +3788,12 @@ class Matmul(Operator):
         N = computational_graph.N
         K = computational_graph.K
 
-        Kf, Mf, Nf, Kr, Mr, Nr = compute_optimal_macro_layout_decode(16, K, N, M)
+        Kf, Mf, Nf, Kr, Mr, Nr = compute_optimal_macro_layout_decode(
+            pcb_module.compute_module.core_count, K, N, M,
+            h=pcb_module.compute_module.core.cim_macro.array_height,
+            w=pcb_module.compute_module.core.cim_macro.array_width,
+            Nadder=pcb_module.compute_module.core.cim_macro.Nbank,
+        )
 
         data_type = computational_graph.data_type
 
@@ -3907,9 +3917,9 @@ class Matmul(Operator):
                 f"当前为 {mapping.l2_loop_order!r}"
             )
 
-        num_K_tiles = Kr
+        num_K_tiles = ceil(K / tile_K)
 
-        num_N_groups = Nr
+        num_N_groups = ceil(N / tile_N)
 
         # ============================================================
         # Weight storage
@@ -3990,6 +4000,8 @@ class Matmul(Operator):
         effective_throughput_per_macro = (
             base_throughput_per_macro
             * decode_effective_speedup
+            # Existing throughput is calibrated to a four-plane dense baseline.
+            * (4.0 / activation_serial_bits)
         )
 
         if effective_throughput_per_macro <= 0:
@@ -4093,24 +4105,12 @@ class Matmul(Operator):
                 # 当前 N super-tile 需要多少个 Macro
                 # ====================================================
 
-                active_macros = ceil(
-                    cur_tile_N
-                    / physical_macro_N
-                )
-
-                active_macros = min(
-                    core_count,
-                    active_macros,
-                )
-
-                max_active_macros = max(
-                    max_active_macros,
-                    active_macros,
-                )
-
-                K_factor = 1
-                M_factor = 1
-                N_factor = active_macros
+                K_factor = ceil(cur_tile_K / physical_macro_K)
+                N_factor = ceil(cur_tile_N / physical_macro_N)
+                active_macros = K_factor * N_factor
+                if active_macros > core_count:
+                    raise ValueError("Decode mapping exceeds physical macro count")
+                max_active_macros = max(max_active_macros, active_macros)
 
                 # ====================================================
                 # Weight update
@@ -4172,7 +4172,7 @@ class Matmul(Operator):
 
                 physical_compute_K = (
                     ceil(
-                        cur_tile_K
+                        min(cur_tile_K, physical_macro_K)
                         / cim_macro.Nbank
                     )
                     * cim_macro.Nbank
@@ -4185,8 +4185,7 @@ class Matmul(Operator):
                     2
                     * tile_M
                     * physical_compute_N
-                    * physical_macro_K
-                    # * activation_serial_bits
+                    * physical_compute_K
                 )
 
                 total_compute_cycles = ceil(
@@ -4230,7 +4229,7 @@ class Matmul(Operator):
 
                 gb_activation_delivered_bytes = (
                     gb_activation_source_bytes
-                    * active_macros
+                    * N_factor
                 )
 
                 profiler_gb_activation_source_bytes += (
@@ -4252,25 +4251,26 @@ class Matmul(Operator):
                 )
 
                 gb_psum_read_bytes = (
-                    psum_tile_bytes
-                    if k_idx > 0
-                    else 0
+                    psum_tile_bytes * (K_factor - 1 + int(k_idx > 0))
                 )
 
-                gb_psum_write_bytes = (
-                    psum_tile_bytes
-                )
+                # Each K shard writes a partial sum; subsequent shards read
+                # the accumulator. Reduction is bandwidth-bound in this model.
+                gb_psum_write_bytes = psum_tile_bytes * K_factor
 
                 # 假设 multicast NoC 从 Global Buffer 只读取一份
                 # activation，因此不乘 active_macros。
                 gb_read_cycles = ceil(
                     (
                         gb_activation_source_bytes
-                        + gb_psum_read_bytes
+                        + (psum_tile_bytes if k_idx > 0 else 0)
                     )
                     / l2_bw
                 )
 
+                # Intra-round K reduction depends on this round's compute;
+                # its accumulator reads cannot overlap that compute.
+                reduction_read_cycles = ceil(psum_tile_bytes * (K_factor - 1) / l2_bw)
                 gb_write_cycles = ceil(
                     gb_psum_write_bytes
                     / l2_bw
@@ -4285,7 +4285,7 @@ class Matmul(Operator):
                 )
 
                 profiler_gb_read_cycles += (
-                    gb_read_cycles
+                    gb_read_cycles + reduction_read_cycles
                 )
 
                 profiler_gb_write_cycles += (
@@ -4328,6 +4328,7 @@ class Matmul(Operator):
                     + weight_update_cycles
                     + compute_and_read_cycles
                     + gb_write_cycles
+                    + reduction_read_cycles
                 )
 
                 total_cycle_count += (
@@ -4447,9 +4448,8 @@ class Matmul(Operator):
                     max_active_macros
                 ),
 
-                "activation_broadcast_fanout": (
-                    max_active_macros
-                ),
+                "activation_broadcast_fanout": Nf,
+                "reduction_model": "global_buffer_bandwidth_bound",
 
                 "weight_replication_factor": 1,
 
