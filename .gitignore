@@ -26,6 +26,13 @@ Thumbs.db
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# Temporary and bulk-generated CIM experiment artifacts
+ae/figure5/ijkl/_tmp_test_*.py
+ae/figure5/ijkl/*_sim_profiler.json
+ae/figure5/ijkl/prefill_audit_*/
+ae/figure5/ijkl/qwen_cim_*_sweep_*/
+ae/figure5/ijkl/qwen_prefill_*_sweep_*/
+
 # =======================================================
 # 注意：根据你的要求，需要上传 PDF 等产物文件。
 # 因此这里没有加入 *.pdf, *.csv, *.png 等格式的忽略规则。
