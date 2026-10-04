@@ -70,9 +70,9 @@ class CIMMacro:
         self.output_word_size = output_word_size
         # Weight buffer size in Bytes: Nbank * array_width * 1024 * input_word_size
         # Each bank stores 1024 rows * array_width columns of input_word_size-byte elements
-        self.weight_buffer_size = Nbank * array_width * 1024 * input_word_size
+        self.weight_buffer_size = Nbank * array_width * 64 * input_word_size
         # Max compute throughput at sparsity=0: Nbank * array_width * 2 / input_word_size Ops/cycle
-        self.max_throughput_per_cycle = Nbank * array_width * 2 / input_word_size / 4
+        self.max_throughput_per_cycle = Nbank * array_width * 2 / input_word_size / 2.4
 
 
 systolic_array_dict = {

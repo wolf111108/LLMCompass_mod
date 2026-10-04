@@ -5,6 +5,8 @@ from software_model.transformer import (
     TransformerBlockOPTAutoRegressionTP,
     TransformerBlockQwen25InitComputationTP,
     TransformerBlockQwen25AutoRegressionTP,
+    TransformerBlockBitNetInitComputationTP,
+    TransformerBlockBitNetAutoRegressionTP,
 )
 from software_model.utils import data_type_dict, Tensor
 from hardware_model.system import System, system_dict
@@ -197,6 +199,8 @@ def print_matmul_profiler_stats(model, system=None, n_layers=1, output_token_len
             num_M_tiles = ceil(M / mapping.l2_tile_M) if mapping.l2_tile_M > 0 else 1
             num_N_tiles = ceil(N / mapping.l2_tile_N) if mapping.l2_tile_N > 0 else 1
             weight_write_count_raw = num_K_tiles * num_N_tiles
+            if mapping.l2_loop_order == "mnk":
+                weight_write_count_raw *= num_M_tiles
         else:
             weight_write_count_raw = 0
         weight_write_count = weight_write_count_raw * effective_scale
@@ -217,6 +221,24 @@ def print_matmul_profiler_stats(model, system=None, n_layers=1, output_token_len
 
         # 并行化因子
         other_stats = record["other_stats"]
+        activation_cache_stats = {
+            "activation_cache_capacity_bytes": other_stats.get(
+                "activation_cache_capacity_bytes",
+                None,
+            ),
+            "activation_cache_hits": other_stats.get(
+                "activation_cache_hits",
+                None,
+            ),
+            "activation_cache_misses": other_stats.get(
+                "activation_cache_misses",
+                None,
+            ),
+            "activation_cache_evictions": other_stats.get(
+                "activation_cache_evictions",
+                None,
+            ),
+        }
         K_factor = other_stats.get("K_factor", 1)
         M_factor = other_stats.get("M_factor", 1)
         N_factor = other_stats.get("N_factor", 1)
@@ -387,6 +409,9 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
             num_K_tiles_d = ceil(K / mapping.l2_tile_K) if mapping.l2_tile_K > 0 else 1
             num_N_tiles_d = ceil(N / mapping.l2_tile_N) if mapping.l2_tile_N > 0 else 1
             weight_write_count_raw = num_K_tiles_d * num_N_tiles_d
+            if mapping.l2_loop_order == "mnk":
+                num_M_tiles_d = ceil(M / mapping.l2_tile_M) if mapping.l2_tile_M > 0 else 1
+                weight_write_count_raw *= num_M_tiles_d
         else:
             weight_write_count_raw = 0
         weight_write_count = weight_write_count_raw * effective_scale
@@ -404,6 +429,24 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
             flop_count = op.flop_count * output_scale
 
         other_stats = record["other_stats"]
+        activation_cache_stats = {
+            "activation_cache_capacity_bytes": other_stats.get(
+                "activation_cache_capacity_bytes",
+                None,
+            ),
+            "activation_cache_hits": other_stats.get(
+                "activation_cache_hits",
+                None,
+            ),
+            "activation_cache_misses": other_stats.get(
+                "activation_cache_misses",
+                None,
+            ),
+            "activation_cache_evictions": other_stats.get(
+                "activation_cache_evictions",
+                None,
+            ),
+        }
 
         # TOPS calculation
         tops = None
@@ -424,6 +467,7 @@ def dump_matmul_profiler_stats(model, json_path, system=None, n_layers=1, output
             "weight_write_cycles_raw": weight_write_cycles_raw,
             "weight_write_count": int(weight_write_count),
             "weight_write_count_raw": weight_write_count_raw,
+            **activation_cache_stats,
             # Activation往返
             "activation_read_trips": round(effective_dram_read / single_input_act_bytes, 4),
             "activation_write_trips": round(effective_dram_write / single_output_act_bytes, 4),
@@ -539,28 +583,81 @@ if __name__ == "__main__":
     parser.add_argument("--roofline", action="store_true", help="use roofline")
     parser.add_argument("--opt", action="store_true", help="use OPT1.3B model")
     parser.add_argument("--qwen", action="store_true", help="use Qwen model")
+    parser.add_argument("--bitnet", action="store_true", help="use BitNet model")
     parser.add_argument("--array_height", type=int, default=128, help="CIM macro array height")
     parser.add_argument("--array_width", type=int, default=128, help="CIM macro array width")
     parser.add_argument("--Nbank", type=int, default=8, help="CIM macro number of banks")
     parser.add_argument("--core_count", type=int, default=16, help="Number of CIM cores")
+    parser.add_argument("--shared-kv", action="store_true", help="reuse one KV cache per GQA KV-head group")
+    parser.add_argument(
+        "--activation-major-prefill",
+        action="store_true",
+        help="prefill loads each activation chunk before streaming all weight tiles",
+    )
+    parser.add_argument(
+        "--weight-major-prefill",
+        action="store_true",
+        help="K-major prefill keeps each weight tile resident and streams all activation tiles",
+    )
+    parser.add_argument(
+        "--include-prefill-attention",
+        action="store_true",
+        help="also simulate prefill Q_mul_K and A_mul_V",
+    )
+    parser.add_argument(
+        "--prefill-activation-bytes",
+        type=float,
+        default=1.0,
+        help="activation element size for activation-major prefill",
+    )
     args = parser.parse_args()
+    if args.activation_major_prefill and args.weight_major_prefill:
+        parser.error(
+            "--activation-major-prefill and --weight-major-prefill are mutually exclusive"
+        )
 
     bs = 1
     # s = 2048
     # output_token_length = 2048  # decode阶段生成token数
     #for qwen
-    s = 8192
-    output_token_length = 8192  # decode阶段生成token数
+    s = 8191
+    output_token_length = 1  # decode阶段生成token数
+
+    kvlength = s                #
+    # kvlength = s + 1 + 1024
+    # kvlength = s + (s + 1)/2
+
     #
+    # opt_dim = 4096
+    # opt_ffndim = 16384
+    # opt_head = 32
+    # opt_layer = 32
+
     opt_dim = 2048
     opt_ffndim = 8192
     opt_head = 32
     opt_layer = 24
-    qwen_dim = 1536
-    qwen_ffndim = 8960
-    qwen_head = 12
-    qwen_kv_head = 2
-    qwen_layer = 28
+
+    qwen_dim =5120
+    qwen_ffndim = 13824
+    qwen_head = 40
+    qwen_kv_head = 8
+    qwen_layer = 48
+
+    # Qwen2.5-7B Nop: L=28, h=3584, num_heads=28, head_dim=128,
+    #   KV_dim=512 (GQA: num_kv_heads=4), inter=18944
+
+    # qwen_dim =3584
+    # qwen_ffndim = 18944
+    # qwen_head = 28
+    # qwen_kv_head = 4
+    # qwen_layer = 28
+
+    # qwen_dim =1536
+    # qwen_ffndim = 8960
+    # qwen_head = 12
+    # qwen_kv_head = 2
+    # qwen_layer = 28
     qwen_kv_partition_mode = 'replicate'
     #opt_dim = 512
     #opt_ffndim = 2048
@@ -650,15 +747,38 @@ if __name__ == "__main__":
                 core_count=args.core_count,
                 )
                 current_system = CIM_system
+                CIM_system.device.compute_module.core.cim_macro.prefill_activation_element_size = (
+                    args.prefill_activation_bytes
+                )
 
-                _ = model(Tensor([bs, s, d_model], data_type_dict["int8"]))
+                _ = model(Tensor([bs, 4096, d_model], data_type_dict["int8"]))
 
                 if args.roofline:
                     model.roofline_model(CIM_system)
                     file_name = "transformer_CIM_qwen_roofline.csv"
                 else:
-                    model.compile_and_simulate(CIM_system, compile_mode="heuristic-CIM")
-                    file_name = "transformer_CIM_qwen_sim.csv"
+                    qwen_compile_mode = (
+                        "heuristic-CIM-activation-major"
+                        if args.activation_major_prefill
+                        else "heuristic-CIM-weight-major"
+                        if args.weight_major_prefill
+                        else "heuristic-CIM"
+                    )
+                    model.compile_and_simulate(
+                        CIM_system,
+                        compile_mode=qwen_compile_mode,
+                        include_attention=args.include_prefill_attention,
+                    )
+                    if args.weight_major_prefill and args.include_prefill_attention:
+                        file_name = "transformer_CIM_qwen_weight_major_with_attention_sim.csv"
+                    elif args.weight_major_prefill:
+                        file_name = "transformer_CIM_qwen_weight_major_sim.csv"
+                    elif args.activation_major_prefill and args.include_prefill_attention:
+                        file_name = "transformer_CIM_qwen_activation_major_with_attention_sim.csv"
+                    elif args.activation_major_prefill:
+                        file_name = "transformer_CIM_qwen_activation_major_sim.csv"
+                    else:
+                        file_name = "transformer_CIM_qwen_sim.csv"
             elif args.opt:
                 model = TransformerBlockOPTInitComputationTP(
                     d_model=opt_dim,
@@ -676,13 +796,81 @@ if __name__ == "__main__":
                     core_count=args.core_count,
                 )
                 current_system = CIM_system
-                _ = model(Tensor([bs, s, opt_dim], data_type_dict["int8"]))
+                _ = model(Tensor([bs, 1024, opt_dim], data_type_dict["int8"]))
                 if args.roofline:
                     model.roofline_model(CIM_system)
                     file_name = "transformer_CIM_opt_roofline.csv"
                 else:
                     model.compile_and_simulate(CIM_system, compile_mode="heuristic-CIM")
                     file_name = "transformer_CIM_opt_sim.csv"
+            elif args.bitnet:
+                # ============================================================
+                # BitNet-b1.58-2B-4T prefill
+                #
+                # hidden_size         = 2560
+                # attention_heads     = 20
+                # key_value_heads     = 5
+                # intermediate_size   = 6912
+                # prefill length      = 2048
+                #
+                # 当前只建模单设备：
+                #   device_count = 1
+                # ============================================================
+
+                bitnet_dim = 2560
+                bitnet_head = 20
+                bitnet_kv_head = 5
+                bitnet_ffndim = 6912
+                bitnet_prefill_length = 2048
+
+                # Mapping_stat 得到的各 Linear 稀疏吞吐加速比。
+                # 暂时没有统计结果时先全部设为 1.0。
+                bitnet_linear_sparsity_speedup = {
+                    "q_proj": 1.0,
+                    "k_proj": 1.0,
+                    "v_proj": 1.0,
+                    "o_proj": 1.0,
+                    "gate_proj": 1.0,
+                    "up_proj": 1.0,
+                    "down_proj": 1.0,
+                }
+
+                model = TransformerBlockBitNetInitComputationTP(
+                    d_model=bitnet_dim,
+                    n_heads=bitnet_head,
+                    n_kv_heads=bitnet_kv_head,
+                    ffn_dim=bitnet_ffndim,
+                    device_count=1,
+                    data_type=data_type_dict["int8"],
+                    linear_sparsity_speedup=bitnet_linear_sparsity_speedup,
+                )
+
+                CIM_system = build_cim_system(
+                    array_height=args.array_height,
+                    array_width=args.array_width,
+                    Nbank=args.Nbank,
+                    core_count=args.core_count,
+                )
+
+                current_system = CIM_system
+
+                # 构建一次 prefill 计算图，确定各 Linear 的 M/N/K
+                _ = model(
+                    Tensor(
+                        [bs, bitnet_prefill_length, bitnet_dim],
+                        data_type_dict["int8"],
+                    )
+                )
+
+                if args.roofline:
+                    model.roofline_model(CIM_system)
+                    file_name = "transformer_CIM_bitnet_roofline.csv"
+                else:
+                    model.compile_and_simulate(
+                        CIM_system,
+                        compile_mode="heuristic-CIM",
+                    )
+                    file_name = "transformer_CIM_bitnet_sim.csv"
             else:
                 model = TransformerBlockInitComputationTP(
                     d_model=12288,
@@ -792,6 +980,7 @@ if __name__ == "__main__":
                     device_count=1,
                     data_type=data_type_dict["int8"],
                     kv_partition_mode=qwen_kv_partition_mode,
+                    shared_kv_gqa=args.shared_kv,
                 )
 
                 CIM_system = build_cim_system(
@@ -804,14 +993,14 @@ if __name__ == "__main__":
 
                 _ = model(
                     Tensor([bs, 1, d_model], data_type_dict["int8"]),
-                    s + output_token_length,
+                    kvlength,
                 )
 
                 if args.roofline:
                     model.roofline_model(CIM_system)
                     file_name = "transformerAR_CIM_qwen_roofline.csv"
                 else:
-                    model.compile_and_simulate(CIM_system, compile_mode="heuristic-CIM")
+                    model.compile_and_simulate(CIM_system, compile_mode="heuristic-CIM-decode")
                     file_name = "transformerAR_CIM_qwen_sim.csv"
             elif args.opt:
                 d_model= opt_dim
@@ -834,14 +1023,80 @@ if __name__ == "__main__":
                 )
                 current_system = CIM_system
                 _ = model(
-                    Tensor([bs, 1, opt_dim], data_type_dict["int8"]), s + output_token_length
+                    Tensor([bs, 1, opt_dim], data_type_dict["int8"]), 1022 + output_token_length
                 )
                 if args.roofline:
                     model.roofline_model(CIM_system)
                     file_name = "transformerAR_CIM_opt_roofline.csv"
                 else:
-                    model.compile_and_simulate(CIM_system, compile_mode="heuristic-CIM")
+                    model.compile_and_simulate(CIM_system, compile_mode="heuristic-CIM-decode")
                     file_name = "transformerAR_CIM_opt_sim.csv"
+            elif args.bitnet:
+                # ============================================================
+                # BitNet-b1.58-2B-4T decode
+                #
+                # hidden_size         = 2560
+                # attention_heads     = 20
+                # key_value_heads     = 5
+                # intermediate_size   = 6912
+                # seq_len (KV cache)  = 2048
+                #
+                # 当前只建模单设备：
+                #   device_count = 1
+                # ============================================================
+
+                bitnet_dim = 2560
+                bitnet_head = 20
+                bitnet_kv_head = 5
+                bitnet_ffndim = 6912
+                bitnet_seq_len = 2048
+
+                # Mapping_stat 得到的各 Linear 稀疏吞吐加速比。
+                # 暂时没有统计结果时先全部设为 1.0。
+                bitnet_linear_sparsity_speedup = {
+                    "q_proj": 1.0,
+                    "k_proj": 1.0,
+                    "v_proj": 1.0,
+                    "o_proj": 1.0,
+                    "gate_proj": 1.0,
+                    "up_proj": 1.0,
+                    "down_proj": 1.0,
+                }
+
+                model = TransformerBlockBitNetAutoRegressionTP(
+                    d_model=bitnet_dim,
+                    n_heads=bitnet_head,
+                    n_kv_heads=bitnet_kv_head,
+                    ffn_dim=bitnet_ffndim,
+                    device_count=1,
+                    data_type=data_type_dict["int8"],
+                    linear_sparsity_speedup=bitnet_linear_sparsity_speedup,
+                )
+
+                CIM_system = build_cim_system(
+                    array_height=args.array_height,
+                    array_width=args.array_width,
+                    Nbank=args.Nbank,
+                    core_count=args.core_count,
+                )
+
+                current_system = CIM_system
+
+                # 构建一次 decode 计算图，确定各 Linear 的 M/N/K
+                _ = model(
+                    Tensor([bs, 1, bitnet_dim], data_type_dict["int8"]),
+                    bitnet_seq_len + output_token_length,
+                )
+
+                if args.roofline:
+                    model.roofline_model(CIM_system)
+                    file_name = "transformerAR_CIM_bitnet_roofline.csv"
+                else:
+                    model.compile_and_simulate(
+                        CIM_system,
+                        compile_mode="heuristic-CIM-decode",
+                    )
+                    file_name = "transformerAR_CIM_bitnet_sim.csv"
             else:
                 model = TransformerBlockAutoRegressionTP(
                     d_model=12288,
@@ -882,13 +1137,15 @@ if __name__ == "__main__":
         else:
             f.write(model.simluate_log)
     if not args.roofline and (args.simgpu or args.simtpu or args.simcim):
-        # 完整模型参数: OPT-1.3B n_layers=24
+        # 完整模型参数
         if args.opt:
             n_layers = opt_layer  # OPT-1.3B
         elif args.qwen:
-            n_layers = qwen_layer  # Qwen-25B
+            n_layers = qwen_layer  # Qwen-1.5B
+        elif args.bitnet:
+            n_layers = 30  # BitNet-b1.58-2B-4T
         else:
-            n_layers = 24  # 以OPT-1.3B为例，实际可以根据模型调整
+            n_layers = 30  # 以OPT-1.3B为例，实际可以根据模型调整
         # decode: n_layers × output_token_length; prefill: n_layers × 1
         print_matmul_profiler_stats(model, current_system,
                                     n_layers=n_layers,
