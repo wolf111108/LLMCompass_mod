@@ -14,6 +14,7 @@ DTYPE = data_type_dict['int8']
 
 def simulate(m, n, k, *, system=None, mode='heuristic-CIM-decode', speed=1):
     system = system or build_cim_system(64, 48, 16, 16)
+    system.device.compute_module.core.cim_macro.cim_backend = "legacy"
     op = Matmul(DTYPE)
     op(Tensor([m, k], DTYPE), Tensor([k, n], DTYPE))
     with contextlib.redirect_stdout(io.StringIO()):

@@ -13,9 +13,12 @@ Defaults match the current figure5 Qwen dimensions: hidden 5120, FFN 13824,
 40 Q heads, 8 KV heads, 48 layers, batch 1. Hardware defaults: 16 macros,
 64 rows, 48 columns, 16 banks, existing 1 MiB GB / CIM IO configuration.
 Decode shared KV is on by default; `--no-shared-kv` disables it.
-`--prefill-mode` selects the existing CIM prefill mapper. Full attention is
-always simulated. Existing per-operator effective speedups and storage precision
-are inherited, not recalibrated; INT8 graph metadata is not a claim that every
+The default CIM GEMM backend now uses quantspar-compatible mapping and
+operator-wide compute steps; see [the contract](../../docs/quantspar_cim.md).
+`--cim-backend legacy` restores the previous default prefill/decode behavior.
+`--prefill-mode` weight-major/activation-major explicitly select legacy prefill
+mappers. Full attention is always simulated. Without `--speedups-json`, existing
+per-operator speedups remain unverified and are not recalibrated; INT8 graph metadata is not a claim that every
 physical unit operates in INT8. The JSON records the actual macro configuration.
 
 ## Scope and interpretation
@@ -30,8 +33,10 @@ GEMM-only entry points. Each sampled phase constructs a fresh model.
 prefill uses existing expanded-head BMM; operator/layer times are serially summed.
 Excluded: embedding, final norm, LM head, sampling, RoPE, residual add, gate-times-up,
 explicit scale/mask, separate KV append latency, host/network/queueing.
-Existing operator data-movement assumptions are retained, including intermediate
-spills; no cross-operator fusion/residency optimization is claimed.
+The quantspar backend adds a serialized bandwidth estimate for data movement,
+weight loading and partial-sum reduction. It does not claim a validated memory
+schedule or cross-operator fusion/residency optimization. Its totals differ from
+the legacy pipelined timing model even at identical compute speedups.
 
 `--control-us 0` is the default **idealized, uncalibrated** controller assumption.
 A supplied value is charged to each of 9 GEMMs + 4 vector operations per block.
@@ -72,7 +77,7 @@ breakdown conservation, and unchanged GEMM cycles when launch overhead changes.
 Implementation verification in the editing environment used import-only shims for
 unavailable Torch/SCALEsim (GPU/systolic execution was not tested); actual CIM and
 vector analytical functions ran unchanged. Existing 6 and new 2 tests passed.
-`validation_requests.csv` records the current 48-layer model at input 256/512 and
+`validation_requests.csv` records the **previous legacy backend** 48-layer model at input 256/512 and
 output 1/32/128 with stride 64, zero control overhead, default shared KV and hardware.
 These are model estimates under the assumptions above, not measured latencies.
 

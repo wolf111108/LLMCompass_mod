@@ -72,6 +72,14 @@ class CIMMacro:
         self.weight_buffer_size = Nbank * array_width * array_height * input_word_size
         # Max compute throughput at sparsity=0: Nbank * array_width * 2 / input_word_size Ops/cycle
         self.max_throughput_per_cycle = Nbank * array_width * 2 / input_word_size / 2.4
+        # Default analytical GEMM backend matches quantspar's operator-wide
+        # mantissa-only effective steps; legacy throughput remains available.
+        self.cim_backend = "quantspar"
+        self.quantspar_prefill_dense_bits = 3.0
+        self.quantspar_decode_dense_bits = 3.0
+        self.quantspar_cycles_per_effective_bit = 1.0
+        self.quantspar_baseline = "source"
+
 
 
 systolic_array_dict = {

@@ -15,6 +15,9 @@ import json
 from scalesim.scale_sim import scalesim
 import copy
 import math
+from software_model.quantspar_cim import (
+    compute_optimal_macro_layout_prefill, compute_cycles, QUANTSPAR_COMMIT,
+)
 
 class BatchedMatmul(Operator):
     def __init__(self, data_type: DataType):
@@ -969,6 +972,36 @@ class Matmul(Operator):
         #     # Use the best weight mapping as the final result
         #     best_mapping = best_weight_mapping
         #     min_cycle_count = best_weight_cycle_count
+        elif compile_mode in ("heuristic-CIM", "heuristic-CIM-decode", "heuristic-CIM-GQA-decode") and getattr(
+            pcb_module.compute_module.core.cim_macro, "cim_backend", "legacy"
+        ) == "quantspar":
+            phase = "prefill" if compile_mode == "heuristic-CIM" else "decode"
+            if compile_mode == "heuristic-CIM-decode" and M != 1:
+                raise ValueError("heuristic-CIM-decode requires M == 1")
+            macro = pcb_module.compute_module.core.cim_macro
+            layout_fn = (compute_optimal_macro_layout_prefill if phase == "prefill"
+                         else compute_optimal_macro_layout_decode)
+            layout = layout_fn(pcb_module.compute_module.core_count, K, N, M,
+                              h=macro.array_height, w=macro.array_width, Nadder=macro.Nbank)
+            kf, mf, nf, kr, mr, nr = layout
+            mapping = self.Mapping(M, min(N, nf * macro.array_width),
+                                   min(K, kf * macro.Nbank * macro.array_height), False,
+                                   M, min(N, nf * macro.array_width),
+                                   min(K, kf * macro.Nbank * macro.array_height),
+                                   "nkm", "nkm", 1, 1, 1)
+            self.profiler.start_new_mapping(mapping)
+            cycle_count = self.simulate_quantspar_cim(
+                self.computational_graph, pcb_module, layout, phase,
+                1.0 if sparsity_ratio is None else float(sparsity_ratio), layer_name,
+            )
+            # Mapping describes bounded GB service chunks; compute still uses
+            # the full operator epoch and the separately recorded round layout.
+            service_rows = self.profiler.current_record["other_stats"]["memory_service_rows"]
+            mapping.l2_tile_M = mapping.l1_tile_M = service_rows
+            self.profiler.record_total_latency(cycle_count)
+            self.profiler.evaluate_current()
+            best_mapping, min_cycle_count = mapping, cycle_count
+
         elif compile_mode == "heuristic-CIM":
             # ============================================================
             # EffLoc strict prefill mapping
@@ -2952,6 +2985,110 @@ class Matmul(Operator):
         )
 
         return int(total_cycle_count)
+
+    def simulate_quantspar_cim(self, graph, device, layout, phase, speedup, layer_name):
+        """Operator-wide asynchronous compute plus serialized memory service.
+
+        The imported ratio already includes bank/macro imbalance and all K/M
+        rounds: apply it once, without introducing compute barriers per tile.
+        Memory/reduction are separate estimates; no implicit compute/IO overlap.
+        """
+        macro = device.compute_module.core.cim_macro
+        M, N, K = graph.M, graph.N, graph.K
+        kf, mf, nf, kr, mr, nr = layout
+        bits = getattr(macro, "quantspar_" + phase + "_dense_bits")
+        profile = getattr(macro, "quantspar_speedups", None)
+        if profile is not None:
+            name = (layer_name or "").removesuffix("serialized")
+            try:
+                speedup = float(profile[phase][name])
+            except KeyError as exc:
+                raise ValueError(f"missing quantspar speedup: {phase}/{name}") from exc
+        dense, sparse = compute_cycles(
+            layout, height=macro.array_height, banks=macro.Nbank, k=K, bits=bits,
+            cycles_per_bit=macro.quantspar_cycles_per_effective_bit,
+            speedup=speedup, baseline=macro.quantspar_baseline,
+        )
+        compute = ceil(sparse)
+        freq = device.compute_module.clock_freq
+        io_bw = device.io_module.bandwidth / freq
+        gb_bw = device.compute_module.l2_bandwidth_per_cycle
+        wu = getattr(device, "wu_io_module", None)
+        wu_bw = wu.bandwidth / freq if wu is not None else macro.array_width
+        if any(not math.isfinite(v) or v <= 0 for v in (io_bw, gb_bw, wu_bw)):
+            raise ValueError("CIM memory bandwidths must be finite and positive")
+        # FP8 activation storage is independent of mantissa compute bits.
+        act_ws = getattr(macro, "quantspar_activation_storage_bits", 8.0) / 8
+        psum_ws = getattr(macro, "psum_word_size", macro.output_word_size)
+        offchip_ws = getattr(macro, "weight_storage_bytes_per_element", macro.input_word_size)
+        local_ws = getattr(macro, "local_weight_storage_bytes_per_element", macro.input_word_size)
+        if any(not math.isfinite(v) or v <= 0 for v in (act_ws, psum_ws, offchip_ws, local_ws)):
+            raise ValueError("CIM storage sizes must be finite and positive")
+        # Bound the memory service chunk without changing quantspar's compute
+        # epoch. Streaming must fit at least one activation row + partial sums.
+        tk, tn = min(K, kf * macro.Nbank * macro.array_height), min(N, nf * macro.array_width)
+        row_bytes = tk * act_ws + tn * kf * psum_ws
+        capacity = device.compute_module.l2_size
+        if row_bytes > capacity:
+            raise ValueError("Global Buffer cannot fit one quantspar service row")
+        memory_rows = min(M, max(1, int(capacity // row_bytes)))
+        cache_fits = M * K * act_ws + M * tn * kf * psum_ws <= capacity
+        activation_bytes = M * K * act_ws * (1 if cache_fits else nr)
+        weights = K * N * offchip_ws
+        local_weights = mf * K * N * local_ws
+        output_bytes = M * N * graph.data_type.word_size
+        # Every K partial is materialized. Bank outputs are internal; K-macro
+        # and K-round partials are combined through the global buffer.
+        partials = kf * kr
+        psum_write = M * N * psum_ws * partials
+        psum_read = M * N * psum_ws * (partials - 1)
+        gb_act = M * K * act_ws * nr
+        gb_delivered = gb_act * nf
+        hbm_act_cycles = ceil(activation_bytes / io_bw)
+        weight_cycles = max(ceil(weights / io_bw), ceil(local_weights / wu_bw))
+        output_cycles = ceil(output_bytes / io_bw)
+        gb_cycles = ceil((gb_act + psum_read + psum_write) / gb_bw)
+        total = compute + hbm_act_cycles + weight_cycles + output_cycles + gb_cycles
+        self.profiler.record_compute_latency(compute)
+        self.profiler.record_dram_latency(hbm_act_cycles + ceil(weights / io_bw) + output_cycles)
+        self.profiler.record_dram_bytes(ceil(activation_bytes + weights), ceil(output_bytes))
+        self.profiler.record_l2_to_l1_latency(gb_cycles)
+        self.profiler.record_l2_l1_bytes(ceil(local_weights + gb_act + psum_read), ceil(psum_write))
+        self.profiler.record_l2_l1_weight_bytes(ceil(local_weights), 0)
+        self.profiler.record_l2_l1_activation_bytes(ceil(gb_act + psum_read), ceil(psum_write))
+        self.profiler.current_record["other_stats"].update({
+            "cim_arch": "Asyn-CIM", "mapping_mode": "quantspar_" + phase,
+            "quantspar_commit": QUANTSPAR_COMMIT,
+            "compute_aggregation": "operator_wide_max_of_macro_round_sums",
+            "memory_schedule": "serialized_bandwidth_estimate",
+            "baseline_policy": macro.quantspar_baseline, "dense_serial_bits": bits,
+            "cycles_per_effective_bit": macro.quantspar_cycles_per_effective_bit,
+            "dense_effective_bit_steps": dense, "sparse_compute_cycles_unrounded": sparse,
+            "effective_speedup": speedup,
+            "K_factor": kf, "M_factor": mf, "N_factor": nf,
+            "K_rounds": kr, "M_rounds": mr, "N_rounds": nr,
+            "max_active_macros": kf * mf * nf, "weight_replication_factor": mf,
+            "tile_M": memory_rows, "compute_epoch_M": M, "tile_K": tk, "tile_N": tn,
+            "memory_service_rows": memory_rows,
+            "num_K_tiles": kr, "num_N_tiles": nr, "num_M_tiles": mr,
+            "weight_write_bytes": ceil(weights), "local_weight_write_bytes": ceil(local_weights),
+            "local_replicated_weight_write_bytes": ceil(local_weights),
+            "weight_write_cycles": weight_cycles, "weight_update_count": kr * nr,
+            "hbm_activation_read_bytes": ceil(activation_bytes),
+            "hbm_output_write_bytes": ceil(output_bytes),
+            "global_buffer_activation_read_bytes": ceil(gb_act),
+            "global_buffer_activation_source_bytes": ceil(gb_act),
+            "global_buffer_activation_delivered_bytes": ceil(gb_delivered),
+            "global_buffer_psum_read_bytes": ceil(psum_read),
+            "global_buffer_psum_write_bytes": ceil(psum_write),
+            "useful_ops": 2 * M * N * K, "activation_cache_fits": cache_fits,
+            "prefill_effective_speedup" if phase == "prefill" else "decode_effective_speedup": speedup,
+        })
+        self.last_cim_weight_write_cycles = weight_cycles
+        self.last_cim_weight_write_bytes = ceil(weights)
+        self.last_cim_local_weight_write_bytes = ceil(local_weights)
+        self.last_cim_weight_update_count = kr * nr
+        return total
 
     def simulate_cim(
         self,

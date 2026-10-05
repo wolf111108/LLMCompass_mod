@@ -71,6 +71,13 @@ def parser():
         p.add_argument("--"+flag, type=positive, default=default)
     p.add_argument("--prefill-mode", choices=["heuristic-CIM", "heuristic-CIM-weight-major",
                    "heuristic-CIM-activation-major"], default="heuristic-CIM")
+    p.add_argument("--cim-backend", choices=["quantspar", "legacy"], default="quantspar")
+    p.add_argument("--prefill-dense-bits", type=nonnegative, default=3.0)
+    p.add_argument("--decode-dense-bits", type=nonnegative, default=3.0)
+    p.add_argument("--cycles-per-effective-bit", type=nonnegative, default=1.0)
+    p.add_argument("--quantspar-baseline", choices=["source", "effective"], default="source")
+    p.add_argument("--speedups-json", type=Path,
+                   help="strict quantspar geometry/bit/baseline manifest; overrides dense bit options")
     p.add_argument("--no-shared-kv", action="store_true")
     p.add_argument("--control-us", type=nonnegative, default=0,
                    help="per operator launch, default 0 = idealized controller (not calibrated)")
@@ -88,6 +95,24 @@ def main(argv=None):
     from ae.figure5.ijkl.test_transformer import build_cim_system, collect_matmul_profiler_stats
 
     system = build_cim_system(args.array_height,args.array_width,args.banks,args.cores)
+    macro = system.device.compute_module.core.cim_macro
+    macro.cim_backend = args.cim_backend
+    macro.quantspar_prefill_dense_bits = args.prefill_dense_bits
+    macro.quantspar_decode_dense_bits = args.decode_dense_bits
+    macro.quantspar_cycles_per_effective_bit = args.cycles_per_effective_bit
+    macro.quantspar_baseline = args.quantspar_baseline
+    if args.speedups_json:
+        if args.cim_backend != "quantspar" or args.prefill_mode != "heuristic-CIM":
+            raise ValueError("speedups manifest requires default quantspar prefill/decode backend")
+        from software_model.quantspar_cim import load_speedup_manifest
+        load_speedup_manifest(macro, args.cores, args.speedups_json, expected_workload={
+            "d_model": args.d_model, "ffn_dim": args.ffn_dim,
+            "q_heads": args.q_heads, "kv_heads": args.kv_heads,
+            "batch_size": args.batch_size, "shared_kv_gqa": not args.no_shared_kv,
+            "prefill_lengths": sorted(set(args.input_lengths)),
+            "decode_cache_lengths": sorted({c for s in args.input_lengths for g in args.output_lengths
+                                            for c in sample_lengths(s, g-1, args.sample_stride)}),
+        })
     system.device.compute_module.overhead = Overhead(*([args.control_us * 1e-6]*4))
     dtype = data_type_dict["int8"]
     model_args = dict(d_model=args.d_model, n_heads=args.q_heads, n_kv_heads=args.kv_heads,
@@ -119,6 +144,9 @@ def main(argv=None):
         hardware["vector_unit"] = {k:v for k,v in vars(vector).items() if isinstance(v,(str,int,float,bool))}
         hardware["vector_data_type"] = str(vector.data_type.name) if hasattr(vector.data_type,"name") else str(vector.data_type.word_size)
         hardware["overhead_seconds"] = vars(system.device.compute_module.overhead)
+        hardware["cim_compute_contract"] = {
+            k:v for k,v in vars(macro).items() if k.startswith("quantspar_") or k == "cim_backend"
+        }
         gemm = profile["_full_model_summary"]["total_latency_cycles"] / system.device.compute_module.clock_freq
         breakdown = dict(zip(names,[float(x)*1000 for x in model.simluate_log.split(",")]))
         if not math.isfinite(seconds) or seconds < 0 or not math.isclose(sum(breakdown.values()),seconds*1000,rel_tol=1e-8):
@@ -148,7 +176,7 @@ def main(argv=None):
         return subprocess.check_output(["git",*cmd],text=True).strip()
     metadata = dict(scope="Figure-10 Transformer-stack E2E estimate; not measured generation",
         approximations=["LayerNorm for RMSNorm", "GeLU for SiLU", "serial block/operator schedule",
-                        "existing hard-coded per-operator effective speedups", "prefill uses existing expanded-head BMM",
+                        "imported operator speedups" if args.speedups_json else "unverified existing hard-coded operator speedups", "prefill uses existing expanded-head BMM",
                         "linear interpolation between decode samples"],
         excludes=["embedding", "final norm", "LM head", "sampling", "RoPE", "residual add",
                   "gate-times-up", "explicit attention scale/mask", "separate KV append latency",

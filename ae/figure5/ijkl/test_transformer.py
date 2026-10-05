@@ -281,7 +281,10 @@ def collect_matmul_profiler_stats(model, system=None, n_layers=1, output_token_l
             "simulation_parameters": {key: other_stats[key] for key in (
                 "mapping_mode", "prefill_effective_speedup", "decode_effective_speedup",
                 "activation_storage_bits", "activation_serial_bits", "effective_throughput_per_macro",
-                "reduction_model") if key in other_stats},
+                "reduction_model", "quantspar_commit", "compute_aggregation", "memory_schedule",
+                "baseline_policy", "dense_serial_bits", "cycles_per_effective_bit",
+                "dense_effective_bit_steps", "sparse_compute_cycles_unrounded", "effective_speedup",
+                "K_rounds", "M_rounds", "N_rounds") if key in other_stats},
             "traffic_bytes": {key: value * effective_scale
                               for key, value in other_stats.items()
                               if key.endswith("_bytes") and isinstance(value, (int, float))},
