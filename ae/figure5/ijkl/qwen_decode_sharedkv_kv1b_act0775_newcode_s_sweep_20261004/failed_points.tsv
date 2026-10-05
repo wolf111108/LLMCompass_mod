@@ -1,0 +1,2 @@
+mode,s,kvlength,status,reason
+shared_kv_decode_act0775,262143,262143,capacity_infeasible,Q_mul_K requires M*N*psum=5*262144*1=1310720 B before activation; exceeds 1 MiB Global Buffer

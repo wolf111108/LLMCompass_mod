@@ -1,0 +1,16 @@
+Auto-regression / Decode
+CIM config: array_height=64, array_width=48, Nbank=16, core_count=16
+Traceback (most recent call last):
+  File "/home/zyzhao/.conda/envs/llmcompass_ae/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/zyzhao/.conda/envs/llmcompass_ae/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/home/zyzhao/LLMCompass/LLMCompass/ae/figure5/ijkl/_tmp_test_new_decode_act0775_s262143.py", line 873, in <module>
+    model.compile_and_simulate(CIM_system, compile_mode="heuristic-CIM-decode")
+  File "/home/zyzhao/LLMCompass/LLMCompass/software_model/transformer.py", line 3051, in compile_and_simulate
+    self.Q_mul_K.compile_and_simulate(
+  File "/home/zyzhao/LLMCompass/LLMCompass/software_model/matmul.py", line 71, in compile_and_simulate
+    matmul_serialized.compile_and_simulate(pcb_module, compile_mode, mapping_save_path, (layer_name or "matmul")+"serialized", sparsity_ratio=sparsity_ratio, att=True) * self.bs  # add
+  File "/home/zyzhao/LLMCompass/LLMCompass/software_model/matmul.py", line 1599, in compile_and_simulate
+    raise ValueError(
+ValueError: Global Buffer 无法容纳 decode partial sums 和一个 activation K tile：required=1311216.0 B, l2_size=1048576 B

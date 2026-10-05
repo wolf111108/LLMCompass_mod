@@ -1,0 +1,2 @@
+phase,metric_scope,n_layers,output_token_length,block_gemm_latency_ms,total_gemm_latency_ms,gemm_tpot_ms
+decode,GEMM-only,48,1,0.5679230000000001,27.2603,27.260303999999998

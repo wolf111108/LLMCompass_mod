@@ -1,0 +1,30 @@
+Auto-regression / Decode
+CIM config: array_height=64, array_width=48, Nbank=16, core_count=16
+{
+  "mode": "Decode",
+  "total_cim_weight_write_bytes": 19654508544,
+  "n_layers": 48,
+  "output_token_length": 1,
+  "total_tokens_times_layers": 48,
+  "metric_scope": "GEMM-only",
+  "gemm_tpot_ms": 37.766928,
+  "note": "TPOT 是当前 KV 长度下的一步；多 token 总量使用固定 KV 长度近似",
+  "total_latency_cycles": 37766928,
+  "total_latency_us": 37766.928,
+  "total_latency_ms": 37.7669,
+  "total_flop_count": 90848624640,
+  "total_flop_count_GFLOP": 90.8486,
+  "total_flop_count_TFLOP": 0.090849,
+  "tops": 2.4055,
+  "total_weight_write_bytes": 13212057600,
+  "total_weight_write_bytes_human": "13.21 GB",
+  "total_kv_cache_access_bytes": 6442450944,
+  "total_kv_cache_access_bytes_human": "6.44 GB",
+  "total_dram_read_bytes": 19753873632,
+  "total_dram_read_bytes_human": "19.75 GB",
+  "total_dram_write_bytes": 128237568,
+  "total_dram_write_bytes_human": "128.24 MB"
+}
+  总 DRAM read: 19753873632 B
+  总 DRAM write: 128237568 B
+GEMM-only profiler stats written to ae/figure5/ijkl/transformerAR_CIM_qwen_sim_profiler.json
