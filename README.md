@@ -1,5 +1,7 @@
 # LLMCompass_mod 项目说明
 
+每次提交的目的、内容、验证与限制见 [修改记录](CHANGELOG.md)；提交时的维护要求见 [仓库协作规则](AGENTS.md)。
+
 `LLMCompass_mod` 是一个面向大语言模型推理硬件评估的 Python 项目。项目把 LLM 推理中的 Transformer、矩阵乘、Softmax、LayerNorm、GeLU、AllReduce 等计算过程抽象为软件模型，再结合 GPU/TPU 风格的硬件模型、互连模型、存储模型和芯片面积成本模型，用于估算延迟、吞吐、硬件面积，并支持一定范围的设计空间探索。
 
 当前仓库更像是研究代码和实验复现代码的集合，包含论文图表复现实验、预设硬件配置、映射记录和成本估算脚本。
