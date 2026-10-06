@@ -279,6 +279,12 @@ def load_speedup_manifest(macro, cores, path, expected_workload=None):
     storage_bits = float(doc.get("activation_storage_bits", 8.0))
     if not math.isfinite(storage_bits) or storage_bits <= 0:
         raise ValueError("invalid quantspar activation storage bits")
+    transport = doc.get("transport")
+    if transport is not None:
+        for name in ("linear_weight_storage_bits", "kv_storage_bits", "local_linear_weight_storage_bits"):
+            value = transport.get(name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"invalid quantspar transport: {name}")
     for phase in ("prefill", "decode"):
         try:
             compute_cycles((1,1,1,1,1,1), height=macro.array_height,
@@ -296,6 +302,15 @@ def load_speedup_manifest(macro, cores, path, expected_workload=None):
     macro.quantspar_decode_dense_bits = float(bits["decode"])
     macro.quantspar_cycles_per_effective_bit = float(cycles)
     macro.quantspar_activation_storage_bits = storage_bits
+    if transport is not None:
+        macro.quantspar_linear_weight_storage_bits = transport["linear_weight_storage_bits"]
+        macro.quantspar_kv_storage_bits = transport["kv_storage_bits"]
+        macro.quantspar_local_linear_weight_storage_bits = transport["local_linear_weight_storage_bits"]
+    else:
+        for name in ("quantspar_linear_weight_storage_bits", "quantspar_kv_storage_bits",
+                     "quantspar_local_linear_weight_storage_bits"):
+            if hasattr(macro, name):
+                delattr(macro, name)
     macro.quantspar_speedups = speedups
     macro.quantspar_manifest_sha256 = hashlib.sha256(raw).hexdigest()
     macro.quantspar_manifest_source_commit = doc["source_commit"]

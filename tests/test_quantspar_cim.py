@@ -90,4 +90,31 @@ class QuantsparCIMTests(unittest.TestCase):
             doc['geometry']['macros']=32;path.write_text(json.dumps(doc))
             with self.assertRaisesRegex(ValueError,'geometry'): load_speedup_manifest(macro,16,path)
 
+    def test_manifest_w4_linear_keeps_fp8_kv_and_local_write_width(self):
+        system=build_cim_system(64,48,16,16)
+        macro=system.device.compute_module.core.cim_macro
+        doc=dict(geometry=dict(height=64,width=48,banks=16,macros=16),baseline='effective',
+            dense_bits=dict(prefill=3,decode=3),cycles_per_effective_bit=1,
+            source_commit='test',workload={'model':'test'},
+            speedups={p:{'Q_proj':2,'Q_mul_K':2,'A_mul_V':2} for p in ['prefill','decode']},
+            transport=dict(linear_weight_storage_bits=4,kv_storage_bits=8,local_linear_weight_storage_bits=8))
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'manifest.json';path.write_text(json.dumps(doc))
+            load_speedup_manifest(macro,16,path)
+            linear=self.run_op(1,48,1024,'decode',system=system)
+            self.assertEqual(linear['other_stats']['weight_write_bytes'],1024*48//2)
+            self.assertEqual(linear['other_stats']['local_weight_write_bytes'],1024*48)
+            for name in ('Q_mul_K','A_mul_V'):
+                op=Matmul(data_type_dict['int8'])
+                op(Tensor([2,128],op.data_type),Tensor([128,257],op.data_type))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    op.compile_and_simulate(system.device,'heuristic-CIM-GQA-decode',layer_name=name,sparsity_ratio=1)
+                self.assertEqual(op.profiler.get_best_record()['other_stats']['weight_write_bytes'],128*257)
+            doc['transport']['kv_storage_bits']=float('nan');path.write_text(json.dumps(doc))
+            with self.assertRaisesRegex(ValueError,'transport'):load_speedup_manifest(macro,16,path)
+            doc.pop('transport');path.write_text(json.dumps(doc))
+            load_speedup_manifest(macro,16,path)
+            old=self.run_op(1,48,1024,'decode',system=system)
+            self.assertEqual(old['other_stats']['weight_write_bytes'],1024*48)
+
 if __name__=='__main__': unittest.main()

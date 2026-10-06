@@ -4,6 +4,14 @@
 
 当前提交用与 commit message 一致的标题标识，可通过 `git log -- CHANGELOG.md` 找到所属提交；自身 SHA 无法在提交前确定，不要求写入。历史补录使用已有 SHA。以下历史记录依据 `CIM_Arch` 的提交内容补录，不代表重新运行了历史实验。
 
+
+## 2026-10-06 — Import FP8 W4 transport for Asyn-CIM profiles
+
+- 目的：让quantspar新的FP8/W4 manifest明确驱动Linear和Attention不同的搬运位宽。
+- 内容：loader校验可选transport并设置packed INT4 Linear、FP8 K/V及本地Linear写入位宽；GEMM按算子选择格式，旧manifest保持原默认。SCALEsim改为systolic路径按需导入，纯CIM不依赖它。
+- 验证：真实PyTorch环境下全套14项后端测试通过；新增回归验证W4片外0.5B、Linear本地1B、FP8 K/V1B、无效transport拒绝及旧manifest恢复。真实小Qwen256＋32文件已通过loader和Figure10 CLI联调（32个decode context），未使用Torch/SCALEsim占位；修改文件语法与diff检查通过。
+- 限制与旧结果影响：不改变旧manifest、legacy和systolic算式；新文件按实际明确transport计量。仅为原Figure10 Transformer-stack估计，未补完整生成链的LM head/RoPE/residual等成本，未执行CUDA/芯片验证。
+
 ## 条目模板
 
 ```markdown

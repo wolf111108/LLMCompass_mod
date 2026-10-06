@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import os
 import json
-from scalesim.scale_sim import scalesim
 import copy
 import math
 from software_model.quantspar_cim import (
@@ -3022,6 +3021,14 @@ class Matmul(Operator):
         psum_ws = getattr(macro, "psum_word_size", macro.output_word_size)
         offchip_ws = getattr(macro, "weight_storage_bytes_per_element", macro.input_word_size)
         local_ws = getattr(macro, "local_weight_storage_bytes_per_element", macro.input_word_size)
+        # Linear B is packed W4; attention B is FP8 K/V. They must not share
+        # one weight-storage override. Older manifests preserve prior defaults.
+        if hasattr(macro, "quantspar_linear_weight_storage_bits"):
+            attention = (layer_name or "").removesuffix("serialized") in ("Q_mul_K", "A_mul_V")
+            offchip_ws = (macro.quantspar_kv_storage_bits if attention else
+                          macro.quantspar_linear_weight_storage_bits) / 8
+            local_ws = (macro.quantspar_kv_storage_bits if attention else
+                        macro.quantspar_local_linear_weight_storage_bits) / 8
         if any(not math.isfinite(v) or v <= 0 for v in (act_ws, psum_ws, offchip_ws, local_ws)):
             raise ValueError("CIM storage sizes must be finite and positive")
         # Bound the memory service chunk without changing quantspar's compute
@@ -5222,6 +5229,7 @@ class Matmul(Operator):
                     f.writelines(f"matmul1, {M}, {N}, {K},\n")
 
                 logpath = f"./systolic_array_model/temp/"
+                from scalesim.scale_sim import scalesim
                 s = scalesim(
                     save_disk_space=True,
                     verbose=False,

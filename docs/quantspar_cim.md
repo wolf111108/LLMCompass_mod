@@ -115,6 +115,32 @@ One ratio per phase/operator is still an approximation averaged over layers and
 contexts. A per-layer/context trace interface is not implemented. The manifest
 checks provenance/configuration, not whether its data were actually measured.
 
+## Current FP8/W4 short-profile import
+
+Quantspar now provides `python -m scripts.profile_asyn_cim` and an independent
+256-prefill/32-decode YAML. Its decode collector packs shared-KV query heads
+into M; the complete manifest uses the corrected `effective` denominator.
+The old upstream blocker descriptions above refer to the historical ca07eb0
+snapshot, not the new dedicated collection entry point.
+
+Run the current Figure-10 CLI with `--input-lengths 256 --output-lengths 33
+--sample-stride 1 --cores 16 --speedups-json /path/to/llmcompass_speedups.json`.
+G=33 means 32 decode forwards after prefill; all cache lengths256..287 match
+the collected manifest. For G=32, collect31 decode forwards upstream instead.
+
+An optional `transport` object explicitly sets `linear_weight_storage_bits=4`,
+`kv_storage_bits=8`, and `local_linear_weight_storage_bits=8`. The loader validates
+these fields. Linear off-chip reads become packed W4; QK/PV retain FP8 K/V;
+the local one-byte Linear coefficient write is an explicit existing assumption.
+Older manifests without this object preserve their original memory behavior.
+This change does not make sparse compute ratios reduce transfer bytes.
+
+The compute scope remains explicit0MMM by default; a source SMMM profile must
+carry4 dense bits and its own ratio. Hidden-one/exponent costs and omitted
+generation operators are still not supplied. The Figure-10 report retains its
+Transformer-stack scope, not full generation/service E2E. Pure CIM imports no
+longer require SCALEsim; the systolic path still imports it when used.
+
 ## Verification
 
 ```
