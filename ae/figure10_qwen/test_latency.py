@@ -78,6 +78,8 @@ def parser():
     p.add_argument("--quantspar-baseline", choices=["source", "effective"], default="source")
     p.add_argument("--speedups-json", type=Path,
                    help="strict quantspar geometry/bit/baseline manifest; overrides dense bit options")
+    p.add_argument("--allow-context-extrapolation", action="store_true",
+                   help="reuse manifest phase/operator ratios at new lengths; model and geometry must still match")
     p.add_argument("--no-shared-kv", action="store_true")
     p.add_argument("--control-us", type=nonnegative, default=0,
                    help="per operator launch, default 0 = idealized controller (not calibrated)")
@@ -86,7 +88,10 @@ def parser():
 
 
 def main(argv=None):
-    args = parser().parse_args(argv)
+    cli = parser()
+    args = cli.parse_args(argv)
+    if args.allow_context_extrapolation and not args.speedups_json:
+        cli.error("--allow-context-extrapolation requires --speedups-json")
     if args.d_model % args.q_heads or args.q_heads % args.kv_heads:
         raise ValueError("d-model must divide into Q heads; Q heads must divide into KV groups")
     from software_model.qwen_fig10 import QwenFigure10Prefill, QwenFigure10Decode
@@ -112,7 +117,7 @@ def main(argv=None):
             "prefill_lengths": sorted(set(args.input_lengths)),
             "decode_cache_lengths": sorted({c for s in args.input_lengths for g in args.output_lengths
                                             for c in sample_lengths(s, g-1, args.sample_stride)}),
-        })
+        }, allow_context_extrapolation=args.allow_context_extrapolation)
     system.device.compute_module.overhead = Overhead(*([args.control_us * 1e-6]*4))
     dtype = data_type_dict["int8"]
     model_args = dict(d_model=args.d_model, n_heads=args.q_heads, n_kv_heads=args.kv_heads,
@@ -185,6 +190,10 @@ def main(argv=None):
         control_assumption="idealized zero control" if args.control_us==0 else "user-specified per-operator control",
         commit=git("rev-parse","HEAD"), dirty=bool(git("status","--porcelain")),
         parameters={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},hardware=hardware)
+    if getattr(macro, "quantspar_manifest_context_extrapolated", False):
+        metadata["approximations"].append(
+            "context extrapolation: source per-phase/operator speedups held fixed; "
+            "target mapping and IO recomputed; no measured long-context sparsity")
     report = dict(metadata=metadata,requests=requests,prefill_samples=list(prefills.values()),decode_samples=list(decodes.values()))
     (args.output_dir/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
     with (args.output_dir/"requests.csv").open("w",newline="") as f:

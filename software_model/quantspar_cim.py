@@ -253,8 +253,13 @@ def compute_cycles(layout, *, height, banks, k, bits, cycles_per_bit=1.0,
     return dense, dense * cycles_per_bit / speedup
 
 
-def load_speedup_manifest(macro, cores, path, expected_workload=None):
-    """Fail closed on mismatched hardware and missing provenance fields."""
+def load_speedup_manifest(macro, cores, path, expected_workload=None,
+                          *, allow_context_extrapolation=False):
+    """Validate provenance; optionally reuse phase ratios at new lengths only.
+
+    Extrapolation preserves measured source metadata and does not reconstruct
+    long-context sparsity. Hardware/model/bit/baseline checks remain mandatory.
+    """
     import json
     import hashlib
     from pathlib import Path
@@ -270,12 +275,42 @@ def load_speedup_manifest(macro, cores, path, expected_workload=None):
     speedups = doc.get("speedups", {})
     if not doc.get("source_commit") or not doc.get("workload"):
         raise ValueError("quantspar manifest requires source_commit and workload provenance")
+    context_mismatches = {}
     if expected_workload is not None:
         workload = doc["workload"]
-        if not isinstance(workload, dict) or any(
-            workload.get(key) != value for key, value in expected_workload.items()
-        ):
-            raise ValueError("quantspar manifest workload does not match requested model/contexts")
+        if not isinstance(workload, dict):
+            raise ValueError("quantspar manifest workload must be an object")
+        context_keys = {"prefill_lengths", "decode_cache_lengths"}
+        mismatches = {}
+        for key, requested in expected_workload.items():
+            source = workload.get(key)
+            if key in context_keys:
+                for label, lengths in (("source", source), ("requested", requested)):
+                    if (not isinstance(lengths, list) or
+                        any(isinstance(x, bool) or not isinstance(x, int) or x < 1
+                            for x in lengths) or
+                        lengths != sorted(set(lengths)) or
+                        (key == "prefill_lengths" and not lengths)):
+                        raise ValueError(f"invalid quantspar workload {label} {key}")
+            if source != requested:
+                difference = dict(source=source, requested=requested)
+                if key in context_keys:
+                    context_mismatches[key] = difference
+                if key not in context_keys or not allow_context_extrapolation:
+                    mismatches[key] = difference
+        if mismatches:
+            def brief(value):
+                if isinstance(value, list) and len(value) > 8:
+                    return f"{value[:3]} ... {value[-3:]} ({len(value)} values)"
+                return repr(value)
+            details = "; ".join(
+                f"{key}: source={brief(v['source'])}, requested={brief(v['requested'])}"
+                for key, v in mismatches.items())
+            hint = ("; use --allow-context-extrapolation only to reuse measured "
+                    "phase/operator ratios at different lengths" if
+                    set(mismatches) <= context_keys else "")
+            raise ValueError("quantspar manifest workload does not match requested "
+                             f"model/contexts: {details}{hint}")
     storage_bits = float(doc.get("activation_storage_bits", 8.0))
     if not math.isfinite(storage_bits) or storage_bits <= 0:
         raise ValueError("invalid quantspar activation storage bits")
@@ -315,3 +350,15 @@ def load_speedup_manifest(macro, cores, path, expected_workload=None):
     macro.quantspar_manifest_sha256 = hashlib.sha256(raw).hexdigest()
     macro.quantspar_manifest_source_commit = doc["source_commit"]
     macro.quantspar_manifest_workload = doc["workload"]
+    macro.quantspar_manifest_requested_workload = expected_workload
+    macro.quantspar_manifest_context_extrapolated = bool(context_mismatches)
+    macro.quantspar_manifest_context_mismatches = context_mismatches
+    macro.quantspar_manifest_context_policy = (
+        "allow_context_extrapolation" if allow_context_extrapolation else "strict")
+    if context_mismatches:
+        import warnings
+        warnings.warn(
+            "Context extrapolation: reusing source per-phase/operator speedups "
+            "at requested lengths; target mapping and IO are recomputed, but "
+            "long-context sparsity is not measured. Source workload is retained "
+            "in report metadata.", RuntimeWarning, stacklevel=2)

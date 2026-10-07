@@ -5,6 +5,13 @@
 当前提交用与 commit message 一致的标题标识，可通过 `git log -- CHANGELOG.md` 找到所属提交；自身 SHA 无法在提交前确定，不要求写入。历史补录使用已有 SHA。以下历史记录依据 `CIM_Arch` 的提交内容补录，不代表重新运行了历史实验。
 
 
+## 2026-10-07 — Allow explicit context extrapolation of measured CIM speedups
+
+- 目的：复用短序列实测统计的phase/operator倍率，为8192＋1024等长请求做离线条件外推，同时避免把短统计重新标成目标长度实测。
+- 内容：Figure-10新增`--allow-context-extrapolation`；只放行prefill/decode上下文长度差异，仍校验模型、batch、GQA、硬件、位口径及transport；错误列出不匹配字段；源manifest不改写，报告保留SHA与源workload并记录目标workload和外推假设。更新使用说明与输出token计数示例。
+- 验证：新增5项无Torch依赖回归通过，覆盖默认严格拒绝、显式复用及源文件不变、目标布局重算、模型/硬件/格式不匹配仍拒绝、无效上下文拒绝及1025→1024次decode。CLI help、Python3.9语法与补丁检查通过。
+- 限制：编辑环境缺Torch，未运行完整Figure-10仿真；未获得用户实际manifest，不报告目标性能。固定短序列倍率仅是外推假设，长上下文稀疏、分片及负载不均衡没有重新测量。保持现有Transformer-stack E2E口径，不补缺失生成算子。
+
 ## 2026-10-06 — Import FP8 W4 transport for Asyn-CIM profiles
 
 - 目的：让quantspar新的FP8/W4 manifest明确驱动Linear和Attention不同的搬运位宽。

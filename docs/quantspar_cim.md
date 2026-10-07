@@ -135,6 +135,39 @@ the local one-byte Linear coefficient write is an explicit existing assumption.
 Older manifests without this object preserve their original memory behavior.
 This change does not make sparse compute ratios reduce transfer bytes.
 
+### Reusing a short profile at longer contexts
+
+The default loader remains strict. When a manifest collected at 256+32 is
+used for 8192+1024, changing the command alone is insufficient. A mismatch
+error now lists the source/requested fields; changing the sample stride may
+also change the required decode-context list.
+
+For a **conditional extrapolation**, explicitly opt in:
+
+```bash
+python -m ae.figure10_qwen.test_latency \
+  --input-lengths 8192 --output-lengths 1025 --sample-stride 1 \
+  --cores 16 --array-height 64 --array-width 48 --banks 16 \
+  --speedups-json llmcompass_speedups.json \
+  --allow-context-extrapolation \
+  --output-dir outputs/asyn_cim_8192_1024_extrapolated
+```
+
+Only `prefill_lengths` and `decode_cache_lengths` may differ. Model dimensions,
+batch, GQA, hardware geometry, bit/baseline and transport validation still apply.
+The measured per-phase/operator ratios are held fixed; the backend recomputes
+the target layouts, dense steps, memory traffic and remaining operator costs.
+This does not measure long-context sparsity or validate its stability.
+
+The input manifest is never edited or relabelled. `report.json` retains its
+source workload and SHA256, records the requested workload/context differences
+in `metadata.hardware.cim_compute_contract`, and adds the extrapolation
+assumption to `metadata.approximations`. CLI emits a warning on actual context
+mismatch. The flag requires `--speedups-json`.
+
+Token counts: `output_length=1025` means 1024 decode forwards;
+`output_length=1024` means 1023 forwards; `output_length=1023` means 1022.
+
 The compute scope remains explicit0MMM by default; a source SMMM profile must
 carry4 dense bits and its own ratio. Hidden-one/exponent costs and omitted
 generation operators are still not supplied. The Figure-10 report retains its

@@ -52,6 +52,31 @@ tradeoff and can smooth hardware tile discontinuities. Compare to stride 1 near
 mapping boundaries. Full-stack times multiply block times by the configured layer
 count, assuming identical layers/effective speedups.
 
+## Importing short-profile ratios at longer contexts
+
+`--speedups-json` normally requires exact model/hardware/context agreement.
+To reuse measured short-profile phase/operator ratios for a **conditional
+long-context estimate**, add `--allow-context-extrapolation`:
+
+```bash
+python -m ae.figure10_qwen.test_latency \
+  --input-lengths 8192 --output-lengths 1025 --sample-stride 1 \
+  --cores 16 --array-height 64 --array-width 48 --banks 16 \
+  --speedups-json llmcompass_speedups.json \
+  --allow-context-extrapolation \
+  --output-dir outputs/asyn_cim_8192_1024_extrapolated
+```
+
+Only context-length differences are allowed. Dimensions, batch, shared-KV GQA,
+geometry and numerical contract must still match. Original manifest metadata
+and SHA256 are preserved; the report separately records target contexts and
+the fixed-speedup extrapolation assumption. Mapping and IO are recomputed for
+the target lengths; long-context sparsity is not re-collected. Without the
+flag, errors now identify the mismatched fields. See [the backend contract](../../docs/quantspar_cim.md).
+
+Here G=1025 produces 1024 decode calls, G=1024 produces 1023, and G=1023
+produces 1022. `--sample-stride 1` simulates every target decode context.
+
 ## Outputs
 
 - `report.json`: assumptions, commit/dirty status, CLI and hardware configuration,
